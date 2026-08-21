@@ -1,0 +1,8 @@
+./noxim_explorer depth_first_4/simDepthFirst3d5Localized504C.cfg
+mv routing_DEPTH_FIRST__topology_MULTI_MESH__.csv depth_first_4/3d5Localized504C.csv
+./noxim_explorer depth_first_4/simDepthFirst3d5Localized505C.cfg
+mv routing_DEPTH_FIRST__topology_MULTI_MESH__.csv depth_first_4/3d5Localized505C.csv
+./noxim_explorer depth_first_4/simDepthFirst3d5Uniform4C.cfg
+mv routing_DEPTH_FIRST__topology_MULTI_MESH__.csv depth_first_4/3d5Uniform4C.csv
+./noxim_explorer depth_first_4/simDepthFirst3d5Uniform5C.cfg
+mv routing_DEPTH_FIRST__topology_MULTI_MESH__.csv depth_first_4/3d5Uniform5C.csv

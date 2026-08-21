@@ -1,0 +1,9 @@
+__pycache__/
+BatchOutputs/
+EdgeSet/
+Graphs/
+LOG/
+Particles/
+TrafficTable/
+YAML/
+/*.csv

@@ -1,0 +1,382 @@
+# (C) Copyright 2025 CEA LIST. All Rights Reserved.
+# Contributor(s): Davy Million (davy.million@cea.fr)
+#
+# This yaml file describes a 3.5D multi-chip topology with one base interposer
+# (BI), three intermediate interposer-chiplet (IOD0/1/2) and seven upper
+# chiplets (ACCD0/1/2/3, CPU0/1/2). The interposer has a single VC. The number
+# of nodes per chip and the position of the vertical links follows the 3.5D
+# system described in our Depth-First paper.
+#
+# No optimized vertical selection is applied.
+
+topology: MULTI_MESH
+
+multi_mesh:
+  BI: # Base Interposer
+    dim_x: 6
+    dim_y: 6
+    dim_z: 1
+    n_virtual_channels: 1
+    # DRAM/HBM nodes, disable the others
+    custom_pe: [0, 5, 6, 11, 12, 17, 18, 23, 24, 29, 30, 35]
+    vertical_links_placement:
+      up:
+        IOD0:
+          - [ 0,  6]
+          - [ 2,  8]
+          - [ 4, 10]
+          - [ 7, 19]
+          - [ 9, 21]
+          - [11, 23]
+
+        IOD1:
+          - [12,  6]
+          - [14,  8]
+          - [16, 10]
+          - [19, 19]
+          - [21, 21]
+          - [23, 23]
+
+        IOD2:
+          - [24,  6]
+          - [26,  8]
+          - [28, 10]
+          - [31, 19]
+          - [33, 21]
+          - [35, 23]
+
+  IOD0:
+    dim_x: 6
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    custom_pe: [5, 11, 17, 23]
+    vertical_links_placement:
+      up:
+        ACCD0:
+          - [ 0,  1]
+          - [ 1,  3]
+          - [ 6,  5]
+          - [ 7,  7]
+          - [12,  9]
+          - [13, 11]
+          - [18, 13]
+          - [19, 15]
+
+        ACCD1:
+          - [ 3,  1]
+          - [ 4,  3]
+          - [ 9,  5]
+          - [10,  7]
+          - [15,  9]
+          - [16, 11]
+          - [21, 13]
+          - [22, 15]
+
+      down:
+          - [ 7,  1]
+          - [ 9,  3]
+          - [11,  5]
+          - [18,  6]
+          - [20,  8]
+          - [22, 10]
+
+  IOD1:
+    dim_x: 6
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    custom_pe: [5, 11, 17, 23]
+    vertical_links_placement:
+      up:
+        ACCD2:
+          - [ 0,  1]
+          - [ 1,  3]
+          - [ 6,  5]
+          - [ 7,  7]
+          - [12,  9]
+          - [13, 11]
+          - [18, 13]
+          - [19, 15]
+
+        ACCD3:
+          - [ 3,  1]
+          - [ 4,  3]
+          - [ 9,  5]
+          - [10,  7]
+          - [15,  9]
+          - [16, 11]
+          - [21, 13]
+          - [22, 15]
+
+      down:
+          - [ 7, 13]
+          - [ 9, 15]
+          - [11, 17]
+          - [18, 18]
+          - [20, 20]
+          - [22, 22]
+
+  IOD2:
+    dim_x: 6
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    custom_pe: [5, 11, 17, 23]
+    vertical_links_placement:
+      up:
+        CPUD0:
+          - [ 0, 0]
+          - [ 1, 1]
+          - [ 6, 2]
+          - [ 7, 3]
+          - [12, 4]
+          - [13, 5]
+          - [18, 6]
+          - [19, 7]
+
+        CPUD1:
+          - [ 2, 0]
+          - [ 3, 1]
+          - [ 8, 2]
+          - [ 9, 3]
+          - [14, 4]
+          - [15, 5]
+          - [20, 6]
+          - [21, 7]
+
+        CPUD2:
+          - [ 4, 0]
+          - [ 5, 1]
+          - [10, 2]
+          - [11, 3]
+          - [16, 4]
+          - [17, 5]
+          - [22, 6]
+          - [23, 7]
+
+      down:
+          - [ 7, 25]
+          - [ 9, 27]
+          - [11, 29]
+          - [18, 30]
+          - [20, 32]
+          - [22, 34]
+
+  ACCD0:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to IOD0
+          - [ 1,  0]
+          - [ 3,  1]
+          - [ 5,  6]
+          - [ 7,  7]
+          - [ 9, 12]
+          - [11, 13]
+          - [13, 18]
+          - [15, 19]
+
+  ACCD1:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to IOD0
+          - [ 1,  3]
+          - [ 3,  4]
+          - [ 5,  9]
+          - [ 7, 10]
+          - [ 9, 15]
+          - [11, 16]
+          - [13, 21]
+          - [15, 22]
+
+  ACCD2:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to IOD1
+          - [ 1,  0]
+          - [ 3,  1]
+          - [ 5,  6]
+          - [ 7,  7]
+          - [ 9, 12]
+          - [11, 13]
+          - [13, 18]
+          - [15, 19]
+
+  ACCD3:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to IOD1
+          - [ 1,  3]
+          - [ 3,  4]
+          - [ 5,  9]
+          - [ 7, 10]
+          - [ 9, 15]
+          - [11, 16]
+          - [13, 21]
+          - [15, 22]
+
+  CPUD0:
+    dim_x: 2
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to IOD2
+          - [0,  0]
+          - [1,  1]
+          - [2,  6]
+          - [3,  7]
+          - [4, 12]
+          - [5, 13]
+          - [6, 18]
+          - [7, 19]
+
+  CPUD1:
+    dim_x: 2
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to IOD2
+          - [0,  2]
+          - [1,  3]
+          - [2,  8]
+          - [3,  9]
+          - [4, 14]
+          - [5, 15]
+          - [6, 20]
+          - [7, 21]
+
+  CPUD2:
+    dim_x: 2
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to IOD2
+          - [0,  4]
+          - [1,  5]
+          - [2, 10]
+          - [3, 11]
+          - [4, 16]
+          - [5, 17]
+          - [6, 22]
+          - [7, 23]
+
+# number of flits for each router buffer
+buffer_depth: 4
+# size of flits, in bits
+flit_size: 32
+# lenght in mm of router to hub connection
+r2h_link_length: 2.0
+# lenght in mm of router to router connection
+r2r_link_length: 1.0
+n_virtual_channels: 2
+
+# Routing algorithms:
+#   XY
+#   WEST_FIRST
+#   DELTA
+#   NORTH_LAST
+#   NEGATIVE_FIRST
+#   ODD_EVEN
+#   DYAD
+#   TABLE_BASED
+# Each of the above labels should match a corresponding
+# implementation in the routingAlgorithms source code directory
+routing_algorithm: DEPTH_FIRST
+routing_table_filename: ""
+
+# Routing specific parameters
+#   dyad_threshold: double
+dyad_threshold: 0.6
+
+# Selection Strategies:
+#   RANDOM
+#   BUFFER_LEVEL
+#   NOP
+# Each of the above labels should match a corresponding
+# implementation in the selectionStrategies source code directory
+selection_strategy: BUFFER_LEVEL
+# If set to false, the multi-noc routing algorithm uses an internal arbiter to
+# choose between available routing path and the selection strategy is not used.
+route_using_selection_strategy: true
+enable_vc_reallocation: true
+
+# SIMULATION PARAMETERS
+#
+clock_period_ps: 1000
+# duration of reset signal assertion, expressed in cycles
+reset_time: 1
+# overal simulation lenght, expressed in cycles
+simulation_time: 10000
+# Number of cycles the simulation will continue to 'drain' the networks. This
+# is used to check if the routing function allows to route any flit to its
+# destination (sent_flit == received_flit).
+# In this stage, each PE can just emit the remaining packets of their packet
+# queues, but cannot inject new ones.
+drain_time: 0
+# collect stats after a given number of cycles
+stats_warm_up_time: 0
+# power breakdown, nodes communication details
+detailed: false
+# stop after a given amount of load has been processed
+max_volume_to_be_drained: 0
+show_buffer_stats: false
+
+# Winoc
+# enable wireless, when false, all wireless channel configuration is
+# ignored
+use_winoc: false
+# experimental power saving strategy
+use_wirxsleep: false
+
+# Verbosity level:
+#   VERBOSE_OFF
+#   VERBOSE_LOW
+#   VERBOSE_MEDIUM
+#   VERBOSE_HIGH
+verbose_mode: VERBOSE_OFF
+# Trace
+trace_mode: false
+trace_filename: ""
+
+min_packet_size: 8
+max_packet_size: 8
+packet_injection_rate: 0.005
+probability_of_retransmission: 0.01
+
+# Traffic distribution:
+#   TRAFFIC_RANDOM
+#   TRAFFIC_TRANSPOSE1
+#   TRAFFIC_TRANSPOSE2
+#   TRAFFIC_HOTSPOT
+#   TRAFFIC_TABLE_BASED
+#   TRAFFIC_BIT_REVERSAL
+#   TRAFFIC_SHUFFLE
+#   TRAFFIC_BUTTERFLY
+#   TRAFFIC_SINGLE_PACKET
+traffic_distribution: TRAFFIC_RANDOM
+# for single packet traffic only
+# 'chip' fields are mandatory for MULTI_MESH
+traffic_single_packet_src_lid: 2
+traffic_single_packet_src_chip: C1
+traffic_single_packet_dst_lid: 3
+traffic_single_packet_dst_chip: C2
+# For TRAFFIC_LOCAL_CHIPLET, ratio of flits sent on the same chiplet
+traffic_localized_chiplet_ratio: 0.7
+# when traffic table based is specified, use the following
+# configuration file
+traffic_table_filename: "t.txt"

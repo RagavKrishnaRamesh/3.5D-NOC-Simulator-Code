@@ -1,0 +1,281 @@
+	--------------------------------------------
+		Noxim - the NoC Simulator
+		(C) University of Catania
+	--------------------------------------------
+Catania V., Mineo A., Monteleone S., Palesi M., and Patti D. (2016) Cycle-Accurate Network on Chip Simulation with Noxim. ACM Trans. Model. Comput. Simul. 27, 1, Article 4 (August 2016), 25 pages. DOI: https://doi.org/10.1145/2953878
+
+
+Loading configuration from file "experiments/configs/my_2p5d.yaml"... Done
+Loading power configurations from file "bin/power.yaml"... Done
+Configuration parsed for I:
+ dim x: 4
+ dim y: 4
+ dim z: 1
+ NoC id: 0
+ vertical links placement: 
+  0 (I) => 1 (C1)
+  1 (I) => 2 (C1)
+  4 (I) => 13 (C1)
+  5 (I) => 14 (C1)
+  8 (I) => 1 (C2)
+  9 (I) => 2 (C2)
+  12 (I) => 13 (C2)
+  13 (I) => 14 (C2)
+  2 (I) => 1 (C3)
+  3 (I) => 2 (C3)
+  6 (I) => 13 (C3)
+  7 (I) => 14 (C3)
+  10 (I) => 1 (C4)
+  11 (I) => 2 (C4)
+  14 (I) => 13 (C4)
+  15 (I) => 14 (C4)
+ vertical links selection: 
+  0 (I -> C1) => 0 (I)
+  1 (I -> C1) => 1 (I)
+  2 (I -> C1) => 0 (I)
+  3 (I -> C1) => 1 (I)
+  4 (I -> C1) => 4 (I)
+  5 (I -> C1) => 5 (I)
+  6 (I -> C1) => 4 (I)
+  7 (I -> C1) => 5 (I)
+  8 (I -> C1) => 0 (I)
+  9 (I -> C1) => 1 (I)
+  10 (I -> C1) => 0 (I)
+  11 (I -> C1) => 1 (I)
+  12 (I -> C1) => 4 (I)
+  13 (I -> C1) => 5 (I)
+  14 (I -> C1) => 4 (I)
+  15 (I -> C1) => 5 (I)
+  0 (I -> C2) => 8 (I)
+  1 (I -> C2) => 9 (I)
+  2 (I -> C2) => 8 (I)
+  3 (I -> C2) => 9 (I)
+  4 (I -> C2) => 12 (I)
+  5 (I -> C2) => 13 (I)
+  6 (I -> C2) => 12 (I)
+  7 (I -> C2) => 13 (I)
+  8 (I -> C2) => 8 (I)
+  9 (I -> C2) => 9 (I)
+  10 (I -> C2) => 8 (I)
+  11 (I -> C2) => 9 (I)
+  12 (I -> C2) => 12 (I)
+  13 (I -> C2) => 13 (I)
+  14 (I -> C2) => 12 (I)
+  15 (I -> C2) => 13 (I)
+  0 (I -> C3) => 2 (I)
+  1 (I -> C3) => 3 (I)
+  2 (I -> C3) => 2 (I)
+  3 (I -> C3) => 3 (I)
+  4 (I -> C3) => 6 (I)
+  5 (I -> C3) => 7 (I)
+  6 (I -> C3) => 6 (I)
+  7 (I -> C3) => 7 (I)
+  8 (I -> C3) => 2 (I)
+  9 (I -> C3) => 3 (I)
+  10 (I -> C3) => 2 (I)
+  11 (I -> C3) => 3 (I)
+  12 (I -> C3) => 6 (I)
+  13 (I -> C3) => 7 (I)
+  14 (I -> C3) => 6 (I)
+  15 (I -> C3) => 7 (I)
+  0 (I -> C4) => 10 (I)
+  1 (I -> C4) => 11 (I)
+  2 (I -> C4) => 10 (I)
+  3 (I -> C4) => 11 (I)
+  4 (I -> C4) => 14 (I)
+  5 (I -> C4) => 15 (I)
+  6 (I -> C4) => 14 (I)
+  7 (I -> C4) => 15 (I)
+  8 (I -> C4) => 10 (I)
+  9 (I -> C4) => 11 (I)
+  10 (I -> C4) => 10 (I)
+  11 (I -> C4) => 11 (I)
+  12 (I -> C4) => 14 (I)
+  13 (I -> C4) => 15 (I)
+  14 (I -> C4) => 14 (I)
+  15 (I -> C4) => 15 (I)
+Configuration parsed for C1:
+ dim x: 4
+ dim y: 4
+ dim z: 1
+ NoC id: 1
+ vertical links placement: 
+  1 (C1) => 0 (I)
+  2 (C1) => 1 (I)
+  13 (C1) => 4 (I)
+  14 (C1) => 5 (I)
+Configuration parsed for C2:
+ dim x: 4
+ dim y: 4
+ dim z: 1
+ NoC id: 2
+ vertical links placement: 
+  1 (C2) => 8 (I)
+  2 (C2) => 9 (I)
+  13 (C2) => 12 (I)
+  14 (C2) => 13 (I)
+Configuration parsed for C3:
+ dim x: 4
+ dim y: 4
+ dim z: 1
+ NoC id: 3
+ vertical links placement: 
+  1 (C3) => 2 (I)
+  2 (C3) => 3 (I)
+  13 (C3) => 6 (I)
+  14 (C3) => 7 (I)
+Configuration parsed for C4:
+ dim x: 4
+ dim y: 4
+ dim z: 1
+ NoC id: 4
+ vertical links placement: 
+  1 (C4) => 10 (I)
+  2 (C4) => 11 (I)
+  13 (C4) => 14 (I)
+  14 (C4) => 15 (I)
+Nearest VLink Down: C1 Router gid:64 lid:0 downward_link: gid:65 lid:1
+Nearest VLink Down: C1 Router gid:65 lid:1 downward_link: gid:65 lid:1
+Nearest VLink Down: C1 Router gid:66 lid:2 downward_link: gid:66 lid:2
+Nearest VLink Down: C1 Router gid:67 lid:3 downward_link: gid:66 lid:2
+Nearest VLink Down: C1 Router gid:68 lid:4 downward_link: gid:65 lid:1
+Nearest VLink Down: C1 Router gid:69 lid:5 downward_link: gid:65 lid:1
+Nearest VLink Down: C1 Router gid:70 lid:6 downward_link: gid:66 lid:2
+Nearest VLink Down: C1 Router gid:71 lid:7 downward_link: gid:66 lid:2
+Nearest VLink Down: C1 Router gid:72 lid:8 downward_link: gid:77 lid:13
+Nearest VLink Down: C1 Router gid:73 lid:9 downward_link: gid:77 lid:13
+Nearest VLink Down: C1 Router gid:74 lid:10 downward_link: gid:78 lid:14
+Nearest VLink Down: C1 Router gid:75 lid:11 downward_link: gid:78 lid:14
+Nearest VLink Down: C1 Router gid:76 lid:12 downward_link: gid:77 lid:13
+Nearest VLink Down: C1 Router gid:77 lid:13 downward_link: gid:77 lid:13
+Nearest VLink Down: C1 Router gid:78 lid:14 downward_link: gid:78 lid:14
+Nearest VLink Down: C1 Router gid:79 lid:15 downward_link: gid:78 lid:14
+Nearest VLink Down: C2 Router gid:48 lid:0 downward_link: gid:49 lid:1
+Nearest VLink Down: C2 Router gid:49 lid:1 downward_link: gid:49 lid:1
+Nearest VLink Down: C2 Router gid:50 lid:2 downward_link: gid:50 lid:2
+Nearest VLink Down: C2 Router gid:51 lid:3 downward_link: gid:50 lid:2
+Nearest VLink Down: C2 Router gid:52 lid:4 downward_link: gid:49 lid:1
+Nearest VLink Down: C2 Router gid:53 lid:5 downward_link: gid:49 lid:1
+Nearest VLink Down: C2 Router gid:54 lid:6 downward_link: gid:50 lid:2
+Nearest VLink Down: C2 Router gid:55 lid:7 downward_link: gid:50 lid:2
+Nearest VLink Down: C2 Router gid:56 lid:8 downward_link: gid:61 lid:13
+Nearest VLink Down: C2 Router gid:57 lid:9 downward_link: gid:61 lid:13
+Nearest VLink Down: C2 Router gid:58 lid:10 downward_link: gid:62 lid:14
+Nearest VLink Down: C2 Router gid:59 lid:11 downward_link: gid:62 lid:14
+Nearest VLink Down: C2 Router gid:60 lid:12 downward_link: gid:61 lid:13
+Nearest VLink Down: C2 Router gid:61 lid:13 downward_link: gid:61 lid:13
+Nearest VLink Down: C2 Router gid:62 lid:14 downward_link: gid:62 lid:14
+Nearest VLink Down: C2 Router gid:63 lid:15 downward_link: gid:62 lid:14
+Nearest VLink Down: C3 Router gid:32 lid:0 downward_link: gid:33 lid:1
+Nearest VLink Down: C3 Router gid:33 lid:1 downward_link: gid:33 lid:1
+Nearest VLink Down: C3 Router gid:34 lid:2 downward_link: gid:34 lid:2
+Nearest VLink Down: C3 Router gid:35 lid:3 downward_link: gid:34 lid:2
+Nearest VLink Down: C3 Router gid:36 lid:4 downward_link: gid:33 lid:1
+Nearest VLink Down: C3 Router gid:37 lid:5 downward_link: gid:33 lid:1
+Nearest VLink Down: C3 Router gid:38 lid:6 downward_link: gid:34 lid:2
+Nearest VLink Down: C3 Router gid:39 lid:7 downward_link: gid:34 lid:2
+Nearest VLink Down: C3 Router gid:40 lid:8 downward_link: gid:45 lid:13
+Nearest VLink Down: C3 Router gid:41 lid:9 downward_link: gid:45 lid:13
+Nearest VLink Down: C3 Router gid:42 lid:10 downward_link: gid:46 lid:14
+Nearest VLink Down: C3 Router gid:43 lid:11 downward_link: gid:46 lid:14
+Nearest VLink Down: C3 Router gid:44 lid:12 downward_link: gid:45 lid:13
+Nearest VLink Down: C3 Router gid:45 lid:13 downward_link: gid:45 lid:13
+Nearest VLink Down: C3 Router gid:46 lid:14 downward_link: gid:46 lid:14
+Nearest VLink Down: C3 Router gid:47 lid:15 downward_link: gid:46 lid:14
+Nearest VLink Down: C4 Router gid:16 lid:0 downward_link: gid:17 lid:1
+Nearest VLink Down: C4 Router gid:17 lid:1 downward_link: gid:17 lid:1
+Nearest VLink Down: C4 Router gid:18 lid:2 downward_link: gid:18 lid:2
+Nearest VLink Down: C4 Router gid:19 lid:3 downward_link: gid:18 lid:2
+Nearest VLink Down: C4 Router gid:20 lid:4 downward_link: gid:17 lid:1
+Nearest VLink Down: C4 Router gid:21 lid:5 downward_link: gid:17 lid:1
+Nearest VLink Down: C4 Router gid:22 lid:6 downward_link: gid:18 lid:2
+Nearest VLink Down: C4 Router gid:23 lid:7 downward_link: gid:18 lid:2
+Nearest VLink Down: C4 Router gid:24 lid:8 downward_link: gid:29 lid:13
+Nearest VLink Down: C4 Router gid:25 lid:9 downward_link: gid:29 lid:13
+Nearest VLink Down: C4 Router gid:26 lid:10 downward_link: gid:30 lid:14
+Nearest VLink Down: C4 Router gid:27 lid:11 downward_link: gid:30 lid:14
+Nearest VLink Down: C4 Router gid:28 lid:12 downward_link: gid:29 lid:13
+Nearest VLink Down: C4 Router gid:29 lid:13 downward_link: gid:29 lid:13
+Nearest VLink Down: C4 Router gid:30 lid:14 downward_link: gid:30 lid:14
+Nearest VLink Down: C4 Router gid:31 lid:15 downward_link: gid:30 lid:14
+Custom VLink Up: I Router gid:0 lid:0 target_gids:[16-31] upward_link: gid:10 lid:10
+Custom VLink Up: I Router gid:0 lid:0 target_gids:[32-47] upward_link: gid:2 lid:2
+Custom VLink Up: I Router gid:0 lid:0 target_gids:[48-63] upward_link: gid:8 lid:8
+Custom VLink Up: I Router gid:0 lid:0 target_gids:[64-79] upward_link: gid:0 lid:0
+Custom VLink Up: I Router gid:1 lid:1 target_gids:[16-31] upward_link: gid:11 lid:11
+Custom VLink Up: I Router gid:1 lid:1 target_gids:[32-47] upward_link: gid:3 lid:3
+Custom VLink Up: I Router gid:1 lid:1 target_gids:[48-63] upward_link: gid:9 lid:9
+Custom VLink Up: I Router gid:1 lid:1 target_gids:[64-79] upward_link: gid:1 lid:1
+Custom VLink Up: I Router gid:2 lid:2 target_gids:[16-31] upward_link: gid:10 lid:10
+Custom VLink Up: I Router gid:2 lid:2 target_gids:[32-47] upward_link: gid:2 lid:2
+Custom VLink Up: I Router gid:2 lid:2 target_gids:[48-63] upward_link: gid:8 lid:8
+Custom VLink Up: I Router gid:2 lid:2 target_gids:[64-79] upward_link: gid:0 lid:0
+Custom VLink Up: I Router gid:3 lid:3 target_gids:[16-31] upward_link: gid:11 lid:11
+Custom VLink Up: I Router gid:3 lid:3 target_gids:[32-47] upward_link: gid:3 lid:3
+Custom VLink Up: I Router gid:3 lid:3 target_gids:[48-63] upward_link: gid:9 lid:9
+Custom VLink Up: I Router gid:3 lid:3 target_gids:[64-79] upward_link: gid:1 lid:1
+Custom VLink Up: I Router gid:4 lid:4 target_gids:[16-31] upward_link: gid:14 lid:14
+Custom VLink Up: I Router gid:4 lid:4 target_gids:[32-47] upward_link: gid:6 lid:6
+Custom VLink Up: I Router gid:4 lid:4 target_gids:[48-63] upward_link: gid:12 lid:12
+Custom VLink Up: I Router gid:4 lid:4 target_gids:[64-79] upward_link: gid:4 lid:4
+Custom VLink Up: I Router gid:5 lid:5 target_gids:[16-31] upward_link: gid:15 lid:15
+Custom VLink Up: I Router gid:5 lid:5 target_gids:[32-47] upward_link: gid:7 lid:7
+Custom VLink Up: I Router gid:5 lid:5 target_gids:[48-63] upward_link: gid:13 lid:13
+Custom VLink Up: I Router gid:5 lid:5 target_gids:[64-79] upward_link: gid:5 lid:5
+Custom VLink Up: I Router gid:6 lid:6 target_gids:[16-31] upward_link: gid:14 lid:14
+Custom VLink Up: I Router gid:6 lid:6 target_gids:[32-47] upward_link: gid:6 lid:6
+Custom VLink Up: I Router gid:6 lid:6 target_gids:[48-63] upward_link: gid:12 lid:12
+Custom VLink Up: I Router gid:6 lid:6 target_gids:[64-79] upward_link: gid:4 lid:4
+Custom VLink Up: I Router gid:7 lid:7 target_gids:[16-31] upward_link: gid:15 lid:15
+Custom VLink Up: I Router gid:7 lid:7 target_gids:[32-47] upward_link: gid:7 lid:7
+Custom VLink Up: I Router gid:7 lid:7 target_gids:[48-63] upward_link: gid:13 lid:13
+Custom VLink Up: I Router gid:7 lid:7 target_gids:[64-79] upward_link: gid:5 lid:5
+Custom VLink Up: I Router gid:8 lid:8 target_gids:[16-31] upward_link: gid:10 lid:10
+Custom VLink Up: I Router gid:8 lid:8 target_gids:[32-47] upward_link: gid:2 lid:2
+Custom VLink Up: I Router gid:8 lid:8 target_gids:[48-63] upward_link: gid:8 lid:8
+Custom VLink Up: I Router gid:8 lid:8 target_gids:[64-79] upward_link: gid:0 lid:0
+Custom VLink Up: I Router gid:9 lid:9 target_gids:[16-31] upward_link: gid:11 lid:11
+Custom VLink Up: I Router gid:9 lid:9 target_gids:[32-47] upward_link: gid:3 lid:3
+Custom VLink Up: I Router gid:9 lid:9 target_gids:[48-63] upward_link: gid:9 lid:9
+Custom VLink Up: I Router gid:9 lid:9 target_gids:[64-79] upward_link: gid:1 lid:1
+Custom VLink Up: I Router gid:10 lid:10 target_gids:[16-31] upward_link: gid:10 lid:10
+Custom VLink Up: I Router gid:10 lid:10 target_gids:[32-47] upward_link: gid:2 lid:2
+Custom VLink Up: I Router gid:10 lid:10 target_gids:[48-63] upward_link: gid:8 lid:8
+Custom VLink Up: I Router gid:10 lid:10 target_gids:[64-79] upward_link: gid:0 lid:0
+Custom VLink Up: I Router gid:11 lid:11 target_gids:[16-31] upward_link: gid:11 lid:11
+Custom VLink Up: I Router gid:11 lid:11 target_gids:[32-47] upward_link: gid:3 lid:3
+Custom VLink Up: I Router gid:11 lid:11 target_gids:[48-63] upward_link: gid:9 lid:9
+Custom VLink Up: I Router gid:11 lid:11 target_gids:[64-79] upward_link: gid:1 lid:1
+Custom VLink Up: I Router gid:12 lid:12 target_gids:[16-31] upward_link: gid:14 lid:14
+Custom VLink Up: I Router gid:12 lid:12 target_gids:[32-47] upward_link: gid:6 lid:6
+Custom VLink Up: I Router gid:12 lid:12 target_gids:[48-63] upward_link: gid:12 lid:12
+Custom VLink Up: I Router gid:12 lid:12 target_gids:[64-79] upward_link: gid:4 lid:4
+Custom VLink Up: I Router gid:13 lid:13 target_gids:[16-31] upward_link: gid:15 lid:15
+Custom VLink Up: I Router gid:13 lid:13 target_gids:[32-47] upward_link: gid:7 lid:7
+Custom VLink Up: I Router gid:13 lid:13 target_gids:[48-63] upward_link: gid:13 lid:13
+Custom VLink Up: I Router gid:13 lid:13 target_gids:[64-79] upward_link: gid:5 lid:5
+Custom VLink Up: I Router gid:14 lid:14 target_gids:[16-31] upward_link: gid:14 lid:14
+Custom VLink Up: I Router gid:14 lid:14 target_gids:[32-47] upward_link: gid:6 lid:6
+Custom VLink Up: I Router gid:14 lid:14 target_gids:[48-63] upward_link: gid:12 lid:12
+Custom VLink Up: I Router gid:14 lid:14 target_gids:[64-79] upward_link: gid:4 lid:4
+Custom VLink Up: I Router gid:15 lid:15 target_gids:[16-31] upward_link: gid:15 lid:15
+Custom VLink Up: I Router gid:15 lid:15 target_gids:[32-47] upward_link: gid:7 lid:7
+Custom VLink Up: I Router gid:15 lid:15 target_gids:[48-63] upward_link: gid:13 lid:13
+Custom VLink Up: I Router gid:15 lid:15 target_gids:[64-79] upward_link: gid:5 lid:5
+Reset for 1 cycles...  done! 
+ Now running for 10000 cycles...
+Noxim simulation completed. (10001 cycles executed)
+
+% Number of directions still reserved: 24
+% Total sent flits: 28267
+% Total received packets: 3532
+% Total received flits: 28237
+% Received/Ideal flits Ratio: 1.03812
+% Average wireless utilization: 0
+% Global average delay (cycles): 17.6356
+% Max delay (cycles): 129
+% Network throughput (flits/cycle): 2.8237
+% Average IP throughput (flits/cycle/IP): 0.0352963
+% Total energy (J): 2.42234e-05
+% 	Dynamic energy (J): 5.45542e-07
+% 	Static energy (J): 2.36779e-05

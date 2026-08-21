@@ -1,0 +1,267 @@
+# (C) Copyright 2025 CEA LIST. All Rights Reserved.
+# Contributor(s): Davy Million (davy.million@cea.fr)
+#
+# This yaml file describes a 2.5D multi-chip topology with one interposer (I)
+# and four chiplets (C1, C2, C3, C4). The interposer has only 1 VC. The number
+# of nodes per chip and the position of the vertical links follows the 2.5D
+# system described in the DeFT/ReD paper.
+
+topology: MULTI_MESH
+
+multi_mesh:
+  I:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 1
+    # DRAM nodes, disable the others
+    custom_pe: [0, 3, 12, 15]
+    vertical_links_placement:
+      up:
+        # Src id in I, Dst id in C1, C2, C3 or C4
+        # NOTE: Ids are local, not global
+        C1:
+          - [ 0,  1]
+          - [ 1,  2]
+          - [ 4, 13]
+          - [ 5, 14]
+        C2:
+          - [ 8,  1]
+          - [ 9,  2]
+          - [12, 13]
+          - [13, 14]
+        C3:
+          - [ 2,  1]
+          - [ 3,  2]
+          - [ 6, 13]
+          - [ 7, 14]
+        C4:
+          - [10,  1]
+          - [11,  2]
+          - [14, 13]
+          - [15, 14]
+
+    vertical_links_selection:
+      up:
+        C1:
+          - [ 0,  0]
+          - [ 1,  1]
+          - [ 2,  0]
+          - [ 3,  1]
+          - [ 4,  4]
+          - [ 5,  5]
+          - [ 6,  4]
+          - [ 7,  5]
+          - [ 8,  0]
+          - [ 9,  1]
+          - [10,  0]
+          - [11,  1]
+          - [12,  4]
+          - [13,  5]
+          - [14,  4]
+          - [15,  5]
+        C2:
+          - [ 0,  8]
+          - [ 1,  9]
+          - [ 2,  8]
+          - [ 3,  9]
+          - [ 4, 12]
+          - [ 5, 13]
+          - [ 6, 12]
+          - [ 7, 13]
+          - [ 8,  8]
+          - [ 9,  9]
+          - [10,  8]
+          - [11,  9]
+          - [12, 12]
+          - [13, 13]
+          - [14, 12]
+          - [15, 13]
+        C3:
+          - [ 0,  2]
+          - [ 1,  3]
+          - [ 2,  2]
+          - [ 3,  3]
+          - [ 4,  6]
+          - [ 5,  7]
+          - [ 6,  6]
+          - [ 7,  7]
+          - [ 8,  2]
+          - [ 9,  3]
+          - [10,  2]
+          - [11,  3]
+          - [12,  6]
+          - [13,  7]
+          - [14,  6]
+          - [15,  7]
+        C4:
+          - [ 0, 10]
+          - [ 1, 11]
+          - [ 2, 10]
+          - [ 3, 11]
+          - [ 4, 14]
+          - [ 5, 15]
+          - [ 6, 14]
+          - [ 7, 15]
+          - [ 8, 10]
+          - [ 9, 11]
+          - [10, 10]
+          - [11, 11]
+          - [12, 14]
+          - [13, 15]
+          - [14, 14]
+          - [15, 15]
+
+  C1:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      # local src id in C1, local dst id in I
+      down:
+          - [ 1,  0]
+          - [ 2,  1]
+          - [13,  4]
+          - [14,  5]
+
+  C2:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to I
+          - [ 1,  8]
+          - [ 2,  9]
+          - [13, 12]
+          - [14, 13]
+
+  C3:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to I
+          - [ 1, 2]
+          - [ 2, 3]
+          - [13, 6]
+          - [14, 7]
+
+  C4:
+    dim_x: 4
+    dim_y: 4
+    dim_z: 1
+    n_virtual_channels: 2
+    vertical_links_placement:
+      down: # to I
+          - [ 1, 10]
+          - [ 2, 11]
+          - [13, 14]
+          - [14, 15]
+
+# number of flits for each router buffer
+buffer_depth: 4
+# size of flits, in bits
+flit_size: 32
+# lenght in mm of router to hub connection
+r2h_link_length: 2.0
+# lenght in mm of router to router connection
+r2r_link_length: 1.0
+n_virtual_channels: 2
+
+# Routing algorithms:
+#   XY
+#   WEST_FIRST
+#   DELTA
+#   NORTH_LAST
+#   NEGATIVE_FIRST
+#   ODD_EVEN
+#   DYAD
+#   TABLE_BASED
+# Each of the above labels should match a corresponding
+# implementation in the routingAlgorithms source code directory
+routing_algorithm: DEPTH_FIRST
+routing_table_filename: ""
+
+# Routing specific parameters
+#   dyad_threshold: double
+dyad_threshold: 0.6
+
+# Selection Strategies:
+#   RANDOM
+#   BUFFER_LEVEL
+#   NOP
+# Each of the above labels should match a corresponding
+# implementation in the selectionStrategies source code directory
+selection_strategy: BUFFER_LEVEL
+# If set to false, the multi-noc routing algorithm uses an internal arbiter to
+# choose between available routing path and the selection strategy is not used.
+route_using_selection_strategy: true
+enable_vc_reallocation: true
+
+# SIMULATION PARAMETERS
+#
+clock_period_ps: 1000
+# duration of reset signal assertion, expressed in cycles
+reset_time: 1
+# overal simulation lenght, expressed in cycles
+simulation_time: 10000
+# Number of cycles the simulation will continue to 'drain' the networks. This
+# is used to check if the routing function allows to route any flit to its
+# destination (sent_flit == received_flit).
+# In this stage, each PE can just emit the remaining packets of their packet
+# queues, but cannot inject new ones.
+drain_time: 0
+# collect stats after a given number of cycles
+stats_warm_up_time: 0
+# power breakdown, nodes communication details
+detailed: false
+# stop after a given amount of load has been processed
+max_volume_to_be_drained: 0
+show_buffer_stats: false
+
+# Winoc
+# enable wireless, when false, all wireless channel configuration is
+# ignored
+use_winoc: false
+# experimental power saving strategy
+use_wirxsleep: false
+
+# Verbosity level:
+#   VERBOSE_OFF
+#   VERBOSE_LOW
+#   VERBOSE_MEDIUM
+#   VERBOSE_HIGH
+verbose_mode: VERBOSE_OFF
+# Trace
+trace_mode: false
+trace_filename: ""
+
+min_packet_size: 8
+max_packet_size: 8
+packet_injection_rate: 0.005
+probability_of_retransmission: 0.01
+
+# Traffic distribution:
+#   TRAFFIC_RANDOM
+#   TRAFFIC_TRANSPOSE1
+#   TRAFFIC_TRANSPOSE2
+#   TRAFFIC_HOTSPOT
+#   TRAFFIC_TABLE_BASED
+#   TRAFFIC_BIT_REVERSAL
+#   TRAFFIC_SHUFFLE
+#   TRAFFIC_BUTTERFLY
+#   TRAFFIC_SINGLE_PACKET
+traffic_distribution: TRAFFIC_LOCAL_CHIPLET
+# for single packet traffic only
+# 'chip' fields are mandatory for MULTI_MESH
+traffic_single_packet_src_lid: 2
+traffic_single_packet_src_chip: C1
+traffic_single_packet_dst_lid: 3
+traffic_single_packet_dst_chip: C2
+traffic_localized_chiplet_ratio: 0.4
+# when traffic table based is specified, use the following
+# configuration file
+traffic_table_filename: "t.txt"
