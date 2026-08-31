@@ -419,10 +419,17 @@ void MultiNoC::buildMultiMesh()
                                            nc.upward_links_selection);
                 }
                 if (!nc.downward_links_placement.empty()) {
-                    int tile_id_zmin = nc.getLocalId(x, y, 0);
-                    Router& r = *nc.t[tile_id_zmin]->r;
-                    r.configureDownwardLink(nc.downward_links_placement,
-                                            nc.downward_links_selection);
+                    int z_start = 0;
+                    int z_end = 1;
+                    if (!nc.intra_links_selection.empty()) {
+                        z_end = nc.mesh_dim_z;
+                    }
+                    for (int z = z_start; z < z_end; z++) {
+                        int tile_id = nc.getLocalId(x, y, z);
+                        Router& r = *nc.t[tile_id]->r;
+                        r.configureDownwardLink(nc.downward_links_placement,
+                                                nc.downward_links_selection);
+                    }
                 }
                 if (!nc.intra_links_selection.empty()) {
                     for (int z = 0; z < nc.mesh_dim_z; z++) {
