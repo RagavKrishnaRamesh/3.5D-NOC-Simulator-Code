@@ -112,6 +112,7 @@ base_icrt = {}                # (x,y) -> {"type", "chiplet", "range", ...}
 INF = float("inf")
 TSV_ASSIGNMENT_RANDOM = 0
 TSV_ASSIGNMENT_ELEVATOR_FIRST = 1
+TSV_ASSIGNMENT_REDELF = TSV_ASSIGNMENT_ELEVATOR_FIRST
 TSV_ASSIGNMENT_MODE = TSV_ASSIGNMENT_RANDOM
 
 # Global TSV assignment (built per chromosome before cost eval)
@@ -798,7 +799,7 @@ def _validate_tsv_assignment_mode(mode):
     mode = int(mode)
     if mode not in (TSV_ASSIGNMENT_RANDOM, TSV_ASSIGNMENT_ELEVATOR_FIRST):
         raise ValueError(
-            "TSV assignment mode must be 0 (random) or 1 (elevator_first)"
+            "TSV assignment mode must be 0 (random) or 1 (redelf)"
         )
     return mode
 
@@ -807,7 +808,7 @@ def _tsv_assignment_mode_name(mode=None):
     mode = TSV_ASSIGNMENT_MODE if mode is None else _validate_tsv_assignment_mode(mode)
     if mode == TSV_ASSIGNMENT_RANDOM:
         return "random"
-    return "elevator_first"
+    return "redelf"
 
 
 def _nearest_tsv_local_index(router_local_idx, tsv_local_indices):
@@ -822,13 +823,65 @@ def _nearest_tsv_local_index(router_local_idx, tsv_local_indices):
     )
 
 
+def _is_south_or_due_east(candidate_local_idx, source_local_idx):
+    cx = candidate_local_idx % CHIP_COLS
+    cy = candidate_local_idx // CHIP_COLS
+    sx = source_local_idx % CHIP_COLS
+    sy = source_local_idx // CHIP_COLS
+    return cy > sy or (cy == sy and cx >= sx)
+
+
+def _redelf_pivot_local_index(tsv_local_indices):
+    if not tsv_local_indices:
+        raise ValueError("tsv_local_indices cannot be empty")
+    return max(tsv_local_indices, key=lambda t: (t // CHIP_COLS, t % CHIP_COLS))
+
+
+def _select_redelf_tsv_local_index(router_local_idx,
+                                  desired_tsv_local_indices,
+                                  opposite_tsv_local_indices=None):
+    """
+    Apply REDELF Ruleset B with south as the primary direction and east as the
+    secondary direction. In this code's TSV model, vertical links are
+    bidirectional and repeated at the same local coordinates on every layer, so
+    desired/opposite sets are usually identical.
+    """
+    if not desired_tsv_local_indices:
+        raise ValueError("desired_tsv_local_indices cannot be empty")
+
+    desired = sorted(set(desired_tsv_local_indices))
+    opposite = sorted(set(
+        desired if opposite_tsv_local_indices is None else opposite_tsv_local_indices
+    ))
+
+    southeast_candidates = [
+        t for t in desired if _is_south_or_due_east(t, router_local_idx)
+    ]
+    selected_by_b1 = bool(southeast_candidates)
+
+    if selected_by_b1:
+        chosen = _nearest_tsv_local_index(router_local_idx, southeast_candidates)
+    else:
+        chosen = _redelf_pivot_local_index(desired)
+
+    if selected_by_b1 and chosen != router_local_idx and opposite:
+        opposite_pivot = _redelf_pivot_local_index(opposite)
+        if _is_south_or_due_east(chosen, opposite_pivot):
+            chosen = _redelf_pivot_local_index(desired)
+
+    return chosen
+
+
 def _select_tsv_local_index(router_local_idx, candidate_local_indices):
     if not candidate_local_indices:
         raise ValueError("candidate_local_indices cannot be empty")
     if TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_RANDOM:
         return random.choice(candidate_local_indices)
-    if TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_ELEVATOR_FIRST:
-        return _nearest_tsv_local_index(router_local_idx, candidate_local_indices)
+    if TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_REDELF:
+        return _select_redelf_tsv_local_index(
+            router_local_idx,
+            candidate_local_indices,
+        )
     raise ValueError(f"Unsupported TSV assignment mode: {TSV_ASSIGNMENT_MODE}")
 
 
@@ -1064,8 +1117,11 @@ def _validate_tsv_assignment_single_3d(tsv_placement, no_routers, no_levels,
             max_assign = max(1, vertical_comms // len(tsv_list)) + 1
             tsv_count = {t: 0 for t in tsv_list}
             for r in range(layer_offset, layer_offset + routers_per_level):
-                available = [t for t, c in tsv_count.items() if c < max_assign]
-                candidate_tsvs = available if available else tsv_list
+                if TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_REDELF:
+                    candidate_tsvs = tsv_list
+                else:
+                    available = [t for t, c in tsv_count.items() if c < max_assign]
+                    candidate_tsvs = available if available else tsv_list
                 candidate_local_indices = [t - layer_offset for t in candidate_tsvs]
                 chosen = layer_offset + _select_tsv_local_index(
                     r - layer_offset,
@@ -1911,7 +1967,7 @@ def main():
         "tsv_assignment_mode",
         type=int,
         choices=[0, 1],
-        help="TSV assignment mode: 0=random, 1=elevator_first",
+        help="TSV assignment mode: 0=random, 1=redelf",
     )
     parser.add_argument(
         "--seed",

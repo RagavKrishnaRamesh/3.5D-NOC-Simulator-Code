@@ -35,12 +35,13 @@ def _normalize_mode(value):
     mode = str(value).strip().lower().replace("-", "_").replace(" ", "_")
     aliases = {
         "random": 0,
+        "redelf": 1,
         "elevator": 1,
         "elevator_first": 1,
         "elevatorfirst": 1,
     }
     if mode not in aliases:
-        raise ValueError("mode must be random or elevator_first")
+        raise ValueError("mode must be random or redelf")
     return aliases[mode]
 
 
@@ -211,7 +212,7 @@ def parse_args():
     parser.add_argument(
         "--mode",
         default="random",
-        help="TSV assignment mode: random or elevator_first",
+        help="TSV assignment mode: random or redelf",
     )
     parser.add_argument("--sim-seed", type=int, default=None)
     parser.add_argument("--noxim", default="bin/noxim")

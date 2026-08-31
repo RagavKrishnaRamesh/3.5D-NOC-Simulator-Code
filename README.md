@@ -117,8 +117,10 @@ Select TSV assignment mode:
 
 ```powershell
 --mode random
---mode elevator_first
+--mode redelf
 ```
+
+`elevator_first` is still accepted as a legacy alias for `redelf`.
 
 Treat graph edges as directed when generating the traffic table:
 
