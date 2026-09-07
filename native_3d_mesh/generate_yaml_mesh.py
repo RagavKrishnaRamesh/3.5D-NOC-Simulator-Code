@@ -256,6 +256,15 @@ def build_yaml(data):
         legacy._build_mesh_graph = original
 
 
+def with_native_mesh_graph(func, *args, **kwargs):
+    original = legacy._build_mesh_graph
+    legacy._build_mesh_graph = _build_mesh_graph_native_3d
+    try:
+        return func(*args, **kwargs)
+    finally:
+        legacy._build_mesh_graph = original
+
+
 def main():
     args = sys.argv[1:]
     if len(args) not in (1, 2):

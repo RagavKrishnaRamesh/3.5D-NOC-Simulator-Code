@@ -396,6 +396,29 @@ def _3d_chiplet_params(router_id):
     return start_id, end_id, levels, routers_per_level
 
 
+def _resolve_assigned_tsv_router(current_router, start_id, end_id, routers_per_level):
+    tsv_r = tsv_assignment_global.get(current_router)
+    if tsv_r is None or not (start_id <= tsv_r <= end_id):
+        return None
+
+    levels = (end_id - start_id + 1) // routers_per_level
+    _, _, current_z = _local_coords_3d(current_router, start_id, levels)
+    layer_offset = start_id + current_z * routers_per_level
+    local_idx = tsv_r - layer_offset
+    if not (0 <= local_idx < routers_per_level):
+        return None
+
+    _, meta = _find_stack_for_router(current_router)
+    if meta is None:
+        return None
+    chip_idx = int(meta["chiplet"].split("_")[1])
+    tsv_placement = current_particle_state[chip_idx][1]
+    if local_idx >= len(tsv_placement) or tsv_placement[local_idx] != 1:
+        return None
+
+    return tsv_r
+
+
 def _walk_3d_to_level(src_router, dest_level, start_id, end_id, levels, routers_per_level):
     current_router = src_router
     cost = 0.0
@@ -407,12 +430,14 @@ def _walk_3d_to_level(src_router, dest_level, start_id, end_id, levels, routers_
 
         direction = 1 if dest_level > cz else -1
 
-        tsv_r = tsv_assignment_global.get(current_router, current_router)
-        if not (start_id <= tsv_r <= end_id):
-            tsv_r = current_router
+        tsv_r = _resolve_assigned_tsv_router(
+            current_router, start_id, end_id, routers_per_level
+        )
+        if tsv_r is None:
+            return INF, None
         tx, ty, tz = _local_coords_3d(tsv_r, start_id, levels)
         if tz != cz:
-            tx, ty, tz = cx, cy, cz
+            return INF, None
 
         cost += (abs(cx - tx) + abs(cy - ty)) * INTRACHIP_LATENCY
 
@@ -470,7 +495,28 @@ def _3d_to_base_cost(router_id, info):
 
 
 def _base_to_3d_cost(router_id, info):
-    return _3d_to_base_cost(router_id, info)
+    start_id, end_id, levels, routers_per_level = _3d_chiplet_params(router_id)
+    dx, dy, dz = _local_coords_3d(router_id, start_id, levels)
+
+    chip_idx = int(info["chiplet"].split("_")[1])
+    base_attach_router = int(current_particle_state[chip_idx][3])
+    ax = int(base_attach_router % CHIP_COLS)
+    ay = int(base_attach_router // CHIP_COLS)
+    attach_router = start_id + ay * CHIP_COLS + ax
+
+    cost = VL_LATENCY
+    current_router = attach_router
+    if dz != 0:
+        walk_cost, current_router = _walk_3d_to_level(
+            attach_router, dz, start_id, end_id, levels, routers_per_level
+        )
+        if current_router is None:
+            return INF
+        cost += walk_cost
+
+    cx, cy, _ = _local_coords_3d(current_router, start_id, levels)
+    cost += (abs(cx - dx) + abs(cy - dy)) * INTRACHIP_LATENCY
+    return cost
 
 
 def _2p5d_to_base_cost(info):

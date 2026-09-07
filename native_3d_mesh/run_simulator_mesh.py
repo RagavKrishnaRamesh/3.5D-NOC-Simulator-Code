@@ -83,7 +83,7 @@ def run_simulation(
     legacy._run_checked(
         [
             py,
-            "write_traffic_table.py",
+            "native_3d_mesh/write_traffic_table_mesh.py",
             legacy._rel_to_repo(graph_path, REPO_ROOT),
             "--particle",
             legacy._rel_to_repo(particle_path, REPO_ROOT),
