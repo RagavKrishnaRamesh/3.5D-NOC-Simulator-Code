@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the native 3D mesh full pipeline for every graph in Graphs/."""
+"""Run the native 3D mesh full pipeline for every graph with at least 16 cores."""
 
 import re
 import subprocess
@@ -11,16 +11,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Edit these globals before launching a batch.
 ALGORITHMS = ["GA", "SA", "PSO"]
-POPULATION = 20
-ITERATIONS = 10
-MODE = "random"  # "random" or "redelf"
-SEED = None
-SIM_SEED = None
+MIN_CORE_COUNT = 16
+POPULATION = 500
+ITERATIONS = 1000
+MODE = "redelf_random"  # "elevator_first" or "redelf_random"
+SEED = 10
+SIM_SEED = 10
 NOXIM = "bin/noxim"
 POWER = "bin/power.yaml"
 ID_SPACE = "global"
 DIRECTED = False
-USE_WSL = True
+USE_WSL = False
 DRY_RUN = False
 STOP_ON_FAILURE = False
 
@@ -143,6 +144,11 @@ def main():
 
     for graph_path in graph_paths:
         core_count = read_core_count(graph_path)
+        if core_count < MIN_CORE_COUNT:
+            skipped.append((graph_path.name, core_count))
+            print(f"SKIP {graph_path.name}: {core_count} cores is less than 16")
+            continue
+
         dims = dims_for_core_count(core_count)
         if dims is None:
             skipped.append((graph_path.name, core_count))

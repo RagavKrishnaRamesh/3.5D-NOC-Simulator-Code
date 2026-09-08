@@ -116,11 +116,15 @@ Use a fixed simulator seed:
 Select TSV assignment mode:
 
 ```powershell
---mode random
---mode redelf
+--mode elevator_first
+--mode redelf_random
 ```
 
-`elevator_first` is still accepted as a legacy alias for `redelf`.
+`--mode redelf_random` applies REDELF Ruleset B and chooses randomly among
+valid south-or-due-east elevator candidates. `--mode elevator_first` uses the
+baseline elevator-first selection without REDELF south/east or pivot rules.
+Numeric modes are also accepted: `0` for `elevator_first`, `1` for
+`redelf_random`.
 
 Treat graph edges as directed when generating the traffic table:
 

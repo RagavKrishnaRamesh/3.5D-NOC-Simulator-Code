@@ -130,10 +130,20 @@ def run_simulation(
         )
         sim_cmd = ["wsl", "bash", "-lc", cmd]
 
+    sim_env = os.environ.copy()
+    systemc_lib = REPO_ROOT / "bin" / "systemc" / "2.3.4" / "lib"
+    existing_library_path = sim_env.get("LD_LIBRARY_PATH")
+    sim_env["LD_LIBRARY_PATH"] = (
+        str(systemc_lib)
+        if not existing_library_path
+        else f"{systemc_lib}{os.pathsep}{existing_library_path}"
+    )
+
     with log_path.open("w", encoding="utf-8", errors="replace") as log:
         result = subprocess.run(
             sim_cmd,
             cwd=REPO_ROOT,
+            env=sim_env,
             text=True,
             stdout=log,
             stderr=subprocess.STDOUT,
