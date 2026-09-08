@@ -4,7 +4,10 @@
 import re
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+
+import fcntl
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -12,8 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Edit these globals before launching a batch.
 ALGORITHMS = ["GA", "SA", "PSO"]
 MIN_CORE_COUNT = 0
-POPULATION = 500
-ITERATIONS = 1000
+POPULATION = 1000
+ITERATIONS = 500
 MODE = "redelf_random"  # "elevator_first" or "redelf_random"
 SEED = 10
 SIM_SEED = 10
@@ -24,6 +27,25 @@ DIRECTED = False
 USE_WSL = False
 DRY_RUN = False
 STOP_ON_FAILURE = False
+
+
+@contextmanager
+def batch_lock():
+    """Prevent two mesh graph batches from interleaving their CSV output."""
+    lock_path = REPO_ROOT / "native_3d_mesh" / ".mesh_graph_batch.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise SystemExit(
+                "Another native 3D mesh graph batch is already running. "
+                "Wait for it to finish before starting GA, SA, or PSO."
+            ) from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def graph_sort_key(path):
@@ -133,7 +155,7 @@ def build_command(algorithm, graph_path, dims):
     return cmd
 
 
-def main():
+def _run_batch():
     graph_paths = sorted((REPO_ROOT / "Graphs").glob("Graph*.txt"), key=graph_sort_key)
     if not graph_paths:
         raise SystemExit("No Graph*.txt files found under Graphs/")
@@ -191,6 +213,14 @@ def main():
         for algorithm, name, code in failures:
             print(f"  failed {algorithm} {name}: exit code {code}")
         raise SystemExit(1)
+
+
+def main():
+    # subprocess.run() below waits for every graph pipeline to finish.  The
+    # process-wide lock also prevents a second launcher from mixing its rows
+    # into the same date-based CSV while this ordered batch is in progress.
+    with batch_lock():
+        _run_batch()
 
 
 if __name__ == "__main__":
