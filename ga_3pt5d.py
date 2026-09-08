@@ -93,7 +93,7 @@ VL_LATENCY = 1.0              # vertical link latency
 
 ELITE_PERCENTAGE = 0.2
 SELECTION_PERCENTAGE = 0.2
-MUTATION_STAGNATION = 20      # iterations of no improvement before applying mutations
+MUTATION_STAGNATION = 50      # iterations of no improvement before applying mutations
 RANDOM_SEED = None            # will be set from system time at runtime
 EARLY_STOP_PATIENCE = 100     # iterations of no improvement before stopping early
 
