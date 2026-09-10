@@ -623,6 +623,32 @@ def _select_redelf_random_tsv_local_index(router_local_idx, desired_tsv_local_in
     return chosen
 
 
+def _select_capped_redelf_tsv_local_index(router_local_idx, tsv_local_indices,
+                                          assignment_count, max_assignments_per_tsv):
+    """Apply Tabu's B1 -> cap -> B2 -> B3 selection order."""
+    candidates = sorted(set(tsv_local_indices))
+    if not candidates:
+        raise ValueError('tsv_local_indices cannot be empty')
+
+    pivot = _redelf_pivot_local_index(candidates)
+    b1_candidates = [tsv for tsv in candidates if _is_south_or_due_east(tsv, router_local_idx)]
+    eligible = b1_candidates or [pivot]  # B2
+    below_cap = [
+        tsv for tsv in eligible
+        if assignment_count.get(tsv, 0) < max_assignments_per_tsv
+    ]
+    chosen = random.choice(below_cap or eligible)
+
+    # B3; normally a no-op for a shared-pillar topology, retained for Tabu parity.
+    chosen_x, chosen_y = chosen % CHIP_COLS, chosen // CHIP_COLS
+    pivot_x, pivot_y = pivot % CHIP_COLS, pivot // CHIP_COLS
+    if chosen != router_local_idx and (
+        chosen_y > pivot_y or (chosen_y == pivot_y and chosen_x > pivot_x)
+    ):
+        chosen = pivot
+    return chosen
+
+
 def _select_tsv_local_index(router_local_idx, candidate_local_indices):
     if not candidate_local_indices:
         raise ValueError('candidate_local_indices cannot be empty')
@@ -856,18 +882,34 @@ def _validate_tsv_assignment_single_3d(tsv_placement, no_routers, no_levels, cor
         tsv_list = [layer_offset + i for i, b in enumerate(tsv_placement) if b == 1]
         fallback = layer_offset
         if tsv_list:
+            # In REDELF mode follow Tabu's B1 -> cap preference -> B2 -> B3
+            # sequence, rather than filtering TSVs before applying B1.
+            max_assignments_per_tsv = math.ceil(routers_per_level / len(tsv_list))
+            tsv_assignment_count = {tsv - layer_offset: 0 for tsv in tsv_list}
             routers = list(range(layer_offset, layer_offset + routers_per_level))
             if TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_REDELF_RANDOM:
                 random.shuffle(routers)
 
             for r in routers:
                 candidate_local_indices = [tsv - layer_offset for tsv in tsv_list]
-                chosen = layer_offset + _select_tsv_local_index(
-                    r - layer_offset,
-                    candidate_local_indices,
-                )
+                if TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_REDELF_RANDOM:
+                    chosen_local = _select_capped_redelf_tsv_local_index(
+                        r - layer_offset, candidate_local_indices,
+                        tsv_assignment_count, max_assignments_per_tsv,
+                    )
+                else:
+                    available_local_indices = [
+                        tsv for tsv in candidate_local_indices
+                        if tsv_assignment_count[tsv] < max_assignments_per_tsv
+                    ]
+                    chosen_local = _select_tsv_local_index(
+                        r - layer_offset,
+                        available_local_indices or candidate_local_indices,
+                    )
+                chosen = layer_offset + chosen_local
                 local_idx = r - base_offset
                 tsv_assignment[local_idx] = chosen
+                tsv_assignment_count[chosen_local] += 1
         else:
             for r in range(layer_offset, layer_offset + routers_per_level):
                 local_idx = r - base_offset
