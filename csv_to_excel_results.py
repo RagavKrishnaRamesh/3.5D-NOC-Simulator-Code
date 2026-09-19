@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert a pipeline RESULTS_*.csv file to a formatted .xlsx workbook."
     )
-    parser.add_argument("csv", type=Path, help="Input pipeline CSV, e.g. native_3d_mesh/RESULTS_elevator_first_20260919_143000.csv")
+    parser.add_argument("csv", type=Path, help="Input pipeline CSV, e.g. native_3d_mesh/RESULTS_elevator_ga_20260919_143000.csv")
     parser.add_argument(
         "-o",
         "--output",

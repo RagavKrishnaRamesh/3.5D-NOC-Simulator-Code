@@ -18,7 +18,7 @@ def main():
     algorithm = legacy._normalize_algorithm(args.algorithm)
     mode = legacy._normalize_mode(args.mode)
     start_time = args.results_start_time or legacy.datetime.now().strftime(legacy.RESULTS_TIME_FORMAT)
-    csv_path = REPO_ROOT / "native_3d_mesh" / legacy._results_csv_name(mode, start_time)
+    csv_path = REPO_ROOT / "native_3d_mesh" / legacy._results_csv_name(mode, algorithm, start_time)
     graph_name, graph_path, graph_number = legacy._graph_name_and_path(args.graph)
 
     particle_path, optimizer_runtime, optimizer_user_time, optimizer_system_time = legacy._run_optimizer(

@@ -49,7 +49,7 @@ def _normalize_mode(value):
         "random": 1,
     }
     if mode not in aliases:
-        raise ValueError("mode must be elevator_first or redelf_random")
+        raise ValueError("mode must be elevator or random")
     return aliases[mode]
 
 
@@ -63,10 +63,11 @@ def _validate_results_start_time(value):
     return value
 
 
-def _results_csv_name(mode, start_time):
+def _results_csv_name(mode, algorithm, start_time):
     _validate_results_start_time(start_time)
-    mode_name = "elevator_first" if _normalize_mode(mode) == 0 else "redelf_random"
-    return f"RESULTS_{mode_name}_{start_time}.csv"
+    mode_name = "elevator" if _normalize_mode(mode) == 0 else "random"
+    algorithm_name = _normalize_algorithm(algorithm).lower()
+    return f"RESULTS_{mode_name}_{algorithm_name}_{start_time}.csv"
 
 
 def _graph_name_and_path(graph):
@@ -258,8 +259,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument(
         "--mode",
-        default="redelf_random",
-        help="TSV assignment mode: elevator_first or redelf_random",
+        default="random",
+        help="TSV assignment mode: elevator or random",
     )
     parser.add_argument(
         "--results-start-time",
@@ -281,7 +282,7 @@ def main():
     algorithm = _normalize_algorithm(args.algorithm)
     mode = _normalize_mode(args.mode)
     start_time = args.results_start_time or datetime.now().strftime(RESULTS_TIME_FORMAT)
-    csv_path = REPO_ROOT / _results_csv_name(mode, start_time)
+    csv_path = REPO_ROOT / _results_csv_name(mode, algorithm, start_time)
     graph_name, graph_path, graph_number = _graph_name_and_path(args.graph)
 
     particle_path, optimizer_runtime, optimizer_user_time, optimizer_system_time = _run_optimizer(

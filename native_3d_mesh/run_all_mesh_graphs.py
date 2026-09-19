@@ -23,7 +23,7 @@ ALGORITHMS = ["GA", "SA", "ASA", "PSO"]
 MIN_CORE_COUNT = 0
 POPULATION = 1000
 ITERATIONS = 500
-MODE = "elevator_first"  # "elevator_first" or "redelf_random"
+MODE = "elevator"  # "elevator" or "random"
 SEED = 10
 SIM_SEED = 10
 NOXIM = "bin/noxim"
@@ -184,7 +184,11 @@ def _run_batch(results_start_time):
     if not graph_paths:
         raise SystemExit("No Graph*.txt files found under Graphs/")
 
-    print(f"Results CSV: native_3d_mesh/RESULTS_{MODE}_{results_start_time}.csv")
+    if MODE not in {"elevator", "random"}:
+        raise ValueError("MODE must be elevator or random")
+    print("Results CSVs:")
+    for algorithm in ALGORITHMS:
+        print(f"  native_3d_mesh/RESULTS_{MODE}_{algorithm.lower()}_{results_start_time}.csv")
     failures = []
     skipped = []
     total = 0

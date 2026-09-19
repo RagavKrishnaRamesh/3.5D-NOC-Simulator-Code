@@ -7,7 +7,7 @@ This repo runs a full NoC optimization and simulation flow:
 3. Generate YAML topology in `YAML/`
 4. Generate traffic table in `TrafficTable/`
 5. Run `noxim`
-6. Append results to a run-start CSV, for example `RESULTS_redelf_random_20260919_143000.csv`
+6. Append results to an algorithm-specific run-start CSV, for example `RESULTS_random_sa_20260919_143000.csv`
 
 ## Requirements
 
@@ -122,17 +122,17 @@ Use a fixed simulator seed:
 Select TSV assignment mode:
 
 ```powershell
---mode elevator_first
---mode redelf_random
+--mode elevator
+--mode random
 ```
 
-`--mode redelf_random` applies REDELF Ruleset B and chooses randomly among
-valid south-or-due-east elevator candidates. `--mode elevator_first` uses the
+`--mode random` applies REDELF Ruleset B and chooses randomly among
+valid south-or-due-east elevator candidates. `--mode elevator` uses the
 baseline elevator-first selection without REDELF south/east or pivot rules.
-Numeric modes are also accepted: `0` for `elevator_first`, `1` for
-`redelf_random`.
+The older `redelf_random` and `elevator_first` spellings remain accepted, as
+do numeric modes: `0` for `elevator`, `1` for `random`.
 
-Reuse a results CSV across runs or days by passing its original start time:
+Append to the same algorithm's results CSV across runs or days by passing its original start time:
 
 ```powershell
 --results-start-time 20260919_143000
@@ -159,8 +159,11 @@ Particles/GA_Particle4.txt
 YAML/GA_Particle4.yaml
 TrafficTable/GA_Particle4-TrafficTable.txt
 LOG/GA_Particle4.log
-RESULTS_<mode>_<YYYYMMDD_HHMMSS>.csv
+RESULTS_<mode>_<algorithm>_<YYYYMMDD_HHMMSS>.csv
 ```
+
+`<mode>` is `random` or `elevator`; `<algorithm>` is `ga`, `pso`, `sa`, or
+`asa`. Each algorithm has its own CSV.
 
 The CSV includes optimizer metrics and simulator metrics, including:
 
@@ -174,10 +177,11 @@ The CSV includes optimizer metrics and simulator metrics, including:
 - `Total energy (J)`
 - `Total received packets`
 
-The start time is captured before optimization. The mesh batch runners pass
+The start time is captured before optimization. The mesh batch runner passes
 the same start time to every graph and algorithm, including runs after midnight.
-If the CSV is locked by Excel, close it and rerun with the same
-`--results-start-time`; the pipeline does not create a second results file.
+All graphs for an algorithm append to its CSV. If a CSV is locked by Excel,
+close it and rerun with the same `--results-start-time`; the pipeline does not
+create a second results file for that algorithm.
 
 ## Run Simulator Only
 
