@@ -7,7 +7,7 @@ This repo runs a full NoC optimization and simulation flow:
 3. Generate YAML topology in `YAML/`
 4. Generate traffic table in `TrafficTable/`
 5. Run `noxim`
-6. Append results to a dated CSV, for example `RUN_170826.csv`
+6. Append results to a run-start CSV, for example `RESULTS_redelf_random_20260919_143000.csv`
 
 ## Requirements
 
@@ -132,6 +132,12 @@ baseline elevator-first selection without REDELF south/east or pivot rules.
 Numeric modes are also accepted: `0` for `elevator_first`, `1` for
 `redelf_random`.
 
+Reuse a results CSV across runs or days by passing its original start time:
+
+```powershell
+--results-start-time 20260919_143000
+```
+
 Treat graph edges as directed when generating the traffic table:
 
 ```powershell
@@ -153,7 +159,7 @@ Particles/GA_Particle4.txt
 YAML/GA_Particle4.yaml
 TrafficTable/GA_Particle4-TrafficTable.txt
 LOG/GA_Particle4.log
-RUN_<date>.csv
+RESULTS_<mode>_<YYYYMMDD_HHMMSS>.csv
 ```
 
 The CSV includes optimizer metrics and simulator metrics, including:
@@ -168,11 +174,10 @@ The CSV includes optimizer metrics and simulator metrics, including:
 - `Total energy (J)`
 - `Total received packets`
 
-If the CSV is open in Excel, the pipeline writes to a pending file instead:
-
-```text
-RUN_<date>_pending.csv
-```
+The start time is captured before optimization. The mesh batch runners pass
+the same start time to every graph and algorithm, including runs after midnight.
+If the CSV is locked by Excel, close it and rerun with the same
+`--results-start-time`; the pipeline does not create a second results file.
 
 ## Run Simulator Only
 

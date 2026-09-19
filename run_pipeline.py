@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import re
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from sa_3p5d import run_sa_3p5d
 
 
 REPO_ROOT = Path(__file__).resolve().parent
+RESULTS_TIME_FORMAT = "%Y%m%d_%H%M%S"
 METRIC_RE = re.compile(
     r"^\s*%\s*(?P<name>[^:\n]+):\s*"
     r"(?P<value>[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*$"
@@ -49,6 +51,22 @@ def _normalize_mode(value):
     if mode not in aliases:
         raise ValueError("mode must be elevator_first or redelf_random")
     return aliases[mode]
+
+
+def _validate_results_start_time(value):
+    try:
+        parsed = datetime.strptime(value, RESULTS_TIME_FORMAT)
+    except ValueError as exc:
+        raise ValueError("results start time must be YYYYMMDD_HHMMSS") from exc
+    if parsed.strftime(RESULTS_TIME_FORMAT) != value:
+        raise ValueError("results start time must be YYYYMMDD_HHMMSS")
+    return value
+
+
+def _results_csv_name(mode, start_time):
+    _validate_results_start_time(start_time)
+    mode_name = "elevator_first" if _normalize_mode(mode) == 0 else "redelf_random"
+    return f"RESULTS_{mode_name}_{start_time}.csv"
 
 
 def _graph_name_and_path(graph):
@@ -201,28 +219,26 @@ def _append_csv(row, metrics, csv_path):
         }
     )
 
-    output_path = csv_path
+    temp_path = None
     try:
-        handle = output_path.open("w", encoding="utf-8", newline="")
-    except PermissionError:
-        output_path = csv_path.with_name(f"{csv_path.stem}_pending.csv")
-        if output_path.exists():
-            with output_path.open("r", encoding="utf-8", newline="") as pending_handle:
-                pending_reader = csv.DictReader(pending_handle)
-                pending_headers = pending_reader.fieldnames or []
-                pending_rows = list(pending_reader)
-            pending_headers = _rename_legacy_cost_column(pending_headers, pending_rows)
-            for header in pending_headers:
-                if header not in final_headers:
-                    final_headers.append(header)
-            existing_rows = pending_rows + [existing_rows[-1]]
-        handle = output_path.open("w", encoding="utf-8", newline="")
-
-    with handle:
-        writer = csv.DictWriter(handle, fieldnames=final_headers)
-        writer.writeheader()
-        writer.writerows(existing_rows)
-    return output_path
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=csv_path.parent,
+            prefix=f".{csv_path.stem}_", suffix=".tmp", delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=final_headers)
+            writer.writeheader()
+            writer.writerows(existing_rows)
+        os.replace(temp_path, csv_path)
+    except PermissionError as exc:
+        raise PermissionError(
+            f"Cannot update {csv_path}; close it and rerun with the same "
+            "--results-start-time to keep all results in one file"
+        ) from exc
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+    return csv_path
 
 
 def parse_args():
@@ -245,6 +261,11 @@ def parse_args():
         default="redelf_random",
         help="TSV assignment mode: elevator_first or redelf_random",
     )
+    parser.add_argument(
+        "--results-start-time",
+        type=_validate_results_start_time,
+        help="Reuse a results CSV with this batch start time (YYYYMMDD_HHMMSS)",
+    )
     parser.add_argument("--sim-seed", type=int, default=None)
     parser.add_argument("--noxim", default="bin/noxim")
     parser.add_argument("--power", default="bin/power.yaml")
@@ -259,6 +280,8 @@ def main():
     args = parse_args()
     algorithm = _normalize_algorithm(args.algorithm)
     mode = _normalize_mode(args.mode)
+    start_time = args.results_start_time or datetime.now().strftime(RESULTS_TIME_FORMAT)
+    csv_path = REPO_ROOT / _results_csv_name(mode, start_time)
     graph_name, graph_path, graph_number = _graph_name_and_path(args.graph)
 
     particle_path, optimizer_runtime, optimizer_user_time, optimizer_system_time = _run_optimizer(
@@ -284,7 +307,6 @@ def main():
     metrics = _parse_simulation_metrics(sim_result["log"])
     optimizer_metrics = _read_optimizer_metrics(particle_path)
 
-    csv_path = REPO_ROOT / f"RUN_{datetime.now().strftime('%d%m%y')}.csv"
     row = {
         "Graph": graph_number,
         "Algorithm": algorithm,

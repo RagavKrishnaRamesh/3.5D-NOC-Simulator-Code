@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -132,7 +133,7 @@ def graph_arg(graph_path):
     return str(graph_path)
 
 
-def build_command(algorithm, graph_path, dims):
+def build_command(algorithm, graph_path, dims, results_start_time=None):
     cmd = [
         sys.executable,
         "native_3d_mesh/run_pipeline_mesh.py",
@@ -173,14 +174,17 @@ def build_command(algorithm, graph_path, dims):
         cmd.append("--directed")
     if USE_WSL:
         cmd.append("--use-wsl")
+    if results_start_time is not None:
+        cmd.extend(["--results-start-time", results_start_time])
     return cmd
 
 
-def _run_batch():
+def _run_batch(results_start_time):
     graph_paths = sorted((REPO_ROOT / "Graphs").glob("Graph*.txt"), key=graph_sort_key)
     if not graph_paths:
         raise SystemExit("No Graph*.txt files found under Graphs/")
 
+    print(f"Results CSV: native_3d_mesh/RESULTS_{MODE}_{results_start_time}.csv")
     failures = []
     skipped = []
     total = 0
@@ -203,7 +207,7 @@ def _run_batch():
 
         for algorithm in ALGORITHMS:
             total += 1
-            cmd = build_command(algorithm, graph_path, dims)
+            cmd = build_command(algorithm, graph_path, dims, results_start_time)
             print(
                 f"\nRUN {algorithm} {graph_path.name}: cores={core_count} "
                 f"dims={dims}"
@@ -237,11 +241,22 @@ def _run_batch():
 
 
 def main():
-    # subprocess.run() below waits for every graph pipeline to finish.  The
-    # process-wide lock also prevents a second launcher from mixing its rows
-    # into the same date-based CSV while this ordered batch is in progress.
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--results-start-time",
+        help="Reuse a results CSV from an earlier batch (YYYYMMDD_HHMMSS)",
+    )
+    args = parser.parse_args()
+    results_start_time = args.results_start_time or datetime.now().strftime("%Y%m%d_%H%M%S")
+    try:
+        parsed_start_time = datetime.strptime(results_start_time, "%Y%m%d_%H%M%S")
+    except ValueError:
+        parser.error("--results-start-time must be YYYYMMDD_HHMMSS")
+    if parsed_start_time.strftime("%Y%m%d_%H%M%S") != results_start_time:
+        parser.error("--results-start-time must be YYYYMMDD_HHMMSS")
+
     with batch_lock():
-        _run_batch()
+        _run_batch(results_start_time)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ def main():
     args = legacy.parse_args()
     algorithm = legacy._normalize_algorithm(args.algorithm)
     mode = legacy._normalize_mode(args.mode)
+    start_time = args.results_start_time or legacy.datetime.now().strftime(legacy.RESULTS_TIME_FORMAT)
+    csv_path = REPO_ROOT / "native_3d_mesh" / legacy._results_csv_name(mode, start_time)
     graph_name, graph_path, graph_number = legacy._graph_name_and_path(args.graph)
 
     particle_path, optimizer_runtime, optimizer_user_time, optimizer_system_time = legacy._run_optimizer(
@@ -42,7 +44,6 @@ def main():
     metrics = legacy._parse_simulation_metrics(sim_result["log"])
     optimizer_metrics = legacy._read_optimizer_metrics(particle_path)
 
-    csv_path = REPO_ROOT / "native_3d_mesh" / f"RUN_{legacy.datetime.now().strftime('%d%m%y')}.csv"
     row = {
         "Graph": graph_number,
         "Algorithm": algorithm,

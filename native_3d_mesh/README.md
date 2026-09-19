@@ -14,6 +14,15 @@ Example:
 python native_3d_mesh/run_pipeline_mesh.py --algorithm GA --graph 4 --chiprows 3 --chipcols 3 --two5dwidth 4 --threedheight 4 --num2p5d 0 --num3d 1 --population 20 --iterations 10 --use-wsl
 ```
 
+The batch runners write every graph and algorithm to one
+`RESULTS_<mode>_<YYYYMMDD_HHMMSS>.csv` in this directory. They capture the
+timestamp once, so a batch crossing midnight keeps using the same file. To
+append a later batch to that file, pass its original start time:
+
+```powershell
+python native_3d_mesh/run_all_mesh_graphs.py --results-start-time 20260919_143000
+```
+
 To generate only the YAML for an existing particle:
 
 ```powershell

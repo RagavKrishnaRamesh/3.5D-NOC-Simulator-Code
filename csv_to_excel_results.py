@@ -1,4 +1,4 @@
-"""Convert pipeline RUN_*.csv files into formatted Excel result workbooks.
+"""Convert pipeline RESULTS_*.csv files into formatted Excel result workbooks.
 
 The generated workbook keeps the raw pipeline columns and adds a formatted
 NOXIM-style summary sheet similar to ``2.5D_results (1).xlsx``.
@@ -39,9 +39,9 @@ ALGORITHM_FILLS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Convert a pipeline RUN_*.csv file to a formatted .xlsx workbook."
+        description="Convert a pipeline RESULTS_*.csv file to a formatted .xlsx workbook."
     )
-    parser.add_argument("csv", type=Path, help="Input pipeline CSV, e.g. native_3d_mesh/RUN_070926.csv")
+    parser.add_argument("csv", type=Path, help="Input pipeline CSV, e.g. native_3d_mesh/RESULTS_elevator_first_20260919_143000.csv")
     parser.add_argument(
         "-o",
         "--output",
