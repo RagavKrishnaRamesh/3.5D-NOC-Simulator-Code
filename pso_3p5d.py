@@ -1227,7 +1227,7 @@ def cost_function_3p5d(particle_state, chiplet_layout, edge_set_file):
     tsv_assignment_global = build_global_tsv_assignment(particle_state, chiplet_layout)
     core_to_router_map = build_core_to_router_map(particle_state, chiplet_layout)
 
-    total_cost = 0.0
+    comm_cost = 0.0
     with open(edge_set_file, "r", encoding="utf-8") as f:
         for line in f:
             vals = line.split()
@@ -1243,9 +1243,10 @@ def cost_function_3p5d(particle_state, chiplet_layout, edge_set_file):
 
             src_router = core_to_router_map[src_core]
             dest_router = core_to_router_map[dest_core]
-            total_cost += calculate_count(src_router, dest_router) * bw
+            hop_countij = calculate_count(src_router, dest_router)
+            comm_cost += hop_countij * bw
 
-    return total_cost
+    return comm_cost
 
 
 def init_normalization_terms(graph_name, edge_set_file, threeD_height):

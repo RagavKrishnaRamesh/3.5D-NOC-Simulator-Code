@@ -1605,7 +1605,7 @@ def cost_function_3p5d(chromosome, chiplet_layout, edge_set_file):
     core_to_router_map = build_core_to_router_map(chromosome, chiplet_layout)
     tsv_assignment_global = build_global_tsv_assignment(chromosome, chiplet_layout)
 
-    total_cost = 0.0
+    comm_cost = 0.0
     with open(edge_set_file, "r") as f:
         for line in f:
             vals = line.split()
@@ -1621,10 +1621,10 @@ def cost_function_3p5d(chromosome, chiplet_layout, edge_set_file):
             src_router = core_to_router_map[src_core]
             dest_router = core_to_router_map[dest_core]
 
-            link_cost = calculate_count(src_router, dest_router)
-            total_cost += link_cost * bw
+            hop_countij = calculate_count(src_router, dest_router)
+            comm_cost += hop_countij * bw
 
-    return total_cost
+    return comm_cost
 
 
 def fitness_terms_3p5d(chromosome, chiplet_layout, router_coordinates, edge_set_file):

@@ -965,7 +965,7 @@ def cost_function_3p5d(chromosome, chiplet_layout, edge_set_file):
     current_chromosome = chromosome
     core_to_router_map = build_core_to_router_map(chromosome, chiplet_layout)
     tsv_assignment_global = build_global_tsv_assignment(chromosome, chiplet_layout)
-    total_cost = 0.0
+    comm_cost = 0.0
     with open(edge_set_file, 'r') as f:
         for line in f:
             vals = line.split()
@@ -978,9 +978,9 @@ def cost_function_3p5d(chromosome, chiplet_layout, edge_set_file):
                 continue
             src_router = core_to_router_map[src_core]
             dest_router = core_to_router_map[dest_core]
-            link_cost = calculate_count(src_router, dest_router)
-            total_cost += link_cost * bw
-    return total_cost
+            hop_countij = calculate_count(src_router, dest_router)
+            comm_cost += hop_countij * bw
+    return comm_cost
 
 
 def _trace_3d_vertical_pairs(start_router, target_level, chip):
