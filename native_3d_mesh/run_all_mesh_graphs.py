@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the native 3D mesh full pipeline for every graph in Graphs/."""
 
+import argparse
 import re
 import subprocess
 import sys

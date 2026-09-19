@@ -6,4 +6,5 @@ LOG/
 Particles/
 TrafficTable/
 YAML/
-/*.csv
+*.csv
+*.xlsx
