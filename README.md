@@ -158,7 +158,7 @@ RUN_<date>.csv
 
 The CSV includes optimizer metrics and simulator metrics, including:
 
-- `comm_cost` (bandwidth-weighted modeled route cost)
+- `Hopcount`
 - `Variance`
 - `Variance Up`
 - `Variance Down`
