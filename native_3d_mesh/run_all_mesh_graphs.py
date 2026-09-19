@@ -7,13 +7,17 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+    import msvcrt
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Edit these globals before launching a batch.
-ALGORITHMS = ["GA", "SA", "PSO"]
+ALGORITHMS = ["GA", "SA", "ASA", "PSO"]
 MIN_CORE_COUNT = 0
 POPULATION = 1000
 ITERATIONS = 500
@@ -35,17 +39,33 @@ def batch_lock():
     lock_path = REPO_ROOT / "native_3d_mesh" / ".mesh_graph_batch.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
+        if fcntl is None and lock_file.tell() == 0:
+            lock_file.write("\0")
+            lock_file.flush()
+        lock_file.seek(0)
         try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if fcntl is not None:
+                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
         except BlockingIOError as exc:
             raise SystemExit(
                 "Another native 3D mesh graph batch is already running. "
-                "Wait for it to finish before starting GA, SA, or PSO."
+                "Wait for it to finish before starting GA, SA, ASA, or PSO."
+            ) from exc
+        except OSError as exc:
+            raise SystemExit(
+                "Another native 3D mesh graph batch is already running. "
+                "Wait for it to finish before starting GA, SA, ASA, or PSO."
             ) from exc
         try:
             yield
         finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+            else:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 def graph_sort_key(path):

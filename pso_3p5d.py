@@ -1323,6 +1323,14 @@ def fitness_terms_3p5d(particle_state, chiplet_layout, router_coordinates, edge_
     return effective_fitness, cost, variance, var_up, var_down
 
 
+def normalized_variance_value(variance):
+    if variance is None:
+        return None
+    if VAR_COMM_SQ <= 0.0:
+        return variance
+    return ((1.0 - W_FACTOR) * variance) / VAR_COMM_SQ
+
+
 # =========================
 # Discrete PSO helpers
 # =========================
@@ -1686,6 +1694,7 @@ def write_particle_file(path,
         "variance": final_var,
         "variance_up": final_var_up,
         "variance_down": final_var_down,
+        "normalized_variance": normalized_variance_value(final_var),
         "params": {
             "chip_rows": chip_rows,
             "chip_cols": chip_cols,

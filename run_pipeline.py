@@ -13,6 +13,8 @@ from ga_3pt5d import run_ga_3p5d
 from pso_3p5d import particle_output_path as pso_particle_output_path
 from pso_3p5d import run_pso_3p5d
 from run_simulator import run_simulation
+from asa_3p5d import particle_output_path as asa_particle_output_path
+from asa_3p5d import run_asa_3p5d
 from sa_3p5d import particle_output_path as sa_particle_output_path
 from sa_3p5d import run_sa_3p5d
 
@@ -26,8 +28,8 @@ METRIC_RE = re.compile(
 
 def _normalize_algorithm(value):
     algorithm = str(value).strip().upper()
-    if algorithm not in {"GA", "PSO", "SA"}:
-        raise ValueError("algorithm must be GA, PSO, or SA")
+    if algorithm not in {"GA", "PSO", "SA", "ASA"}:
+        raise ValueError("algorithm must be GA, PSO, SA, or ASA")
     return algorithm
 
 
@@ -88,9 +90,11 @@ def _run_optimizer(algorithm, graph_name, args, mode):
         "GA": (run_ga_3p5d, ga_particle_output_path),
         "PSO": (run_pso_3p5d, pso_particle_output_path),
         "SA": (run_sa_3p5d, sa_particle_output_path),
+        "ASA": (run_asa_3p5d, asa_particle_output_path),
     }
     runner, particle_path_fn = runners[algorithm]
     start = time.perf_counter()
+    cpu_start = time.process_time()
     runner(
         graph_name,
         args.chiprows,
@@ -104,11 +108,12 @@ def _run_optimizer(algorithm, graph_name, args, mode):
         tsv_assignment_mode=mode,
         seed=args.seed,
     )
+    cpu_time = time.process_time() - cpu_start
     runtime = time.perf_counter() - start
     particle_path = REPO_ROOT / particle_path_fn(graph_name)
     if not particle_path.is_file():
         raise FileNotFoundError(f"Optimizer did not write particle file: {particle_path}")
-    return particle_path, runtime
+    return particle_path, runtime, cpu_time
 
 
 def _parse_simulation_metrics(log_path):
@@ -132,6 +137,7 @@ def _read_optimizer_metrics(particle_path):
         "Variance": data.get("variance"),
         "Variance Up": data.get("variance_up"),
         "Variance Down": data.get("variance_down"),
+        "Normalized Variance": data.get("normalized_variance"),
         "Effective Fitness": data.get("effective_fitness"),
     }
 
@@ -145,10 +151,12 @@ def _append_csv(row, metrics, csv_path):
         "Population",
         "Iterations",
         "Runtime",
+        "CPU Time",
         "Hopcount",
         "Variance",
         "Variance Up",
         "Variance Down",
+        "Normalized Variance",
         "Effective Fitness",
         "Simulation Time",
     ]
@@ -202,7 +210,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Run optimizer, generate YAML/traffic table, simulate, and log results."
     )
-    parser.add_argument("--algorithm", required=True, help="GA, PSO, or SA")
+    parser.add_argument("--algorithm", required=True, help="GA, PSO, SA, or ASA")
     parser.add_argument("--graph", required=True, help="Graph number x or graph path")
     parser.add_argument("--chiprows", type=int, required=True)
     parser.add_argument("--chipcols", type=int, required=True)
@@ -234,7 +242,7 @@ def main():
     mode = _normalize_mode(args.mode)
     graph_name, graph_path, graph_number = _graph_name_and_path(args.graph)
 
-    particle_path, optimizer_runtime = _run_optimizer(
+    particle_path, optimizer_runtime, optimizer_cpu_time = _run_optimizer(
         algorithm,
         graph_name,
         args,
@@ -265,6 +273,7 @@ def main():
         "Population": args.population,
         "Iterations": args.iterations,
         "Runtime": optimizer_runtime,
+        "CPU Time": optimizer_cpu_time,
         "Simulation Time": simulation_time,
     }
     row.update(optimizer_metrics)

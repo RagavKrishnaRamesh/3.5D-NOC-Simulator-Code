@@ -267,7 +267,7 @@ def _generate_traffic_table(graph_path, particle_path, output_path, directed, id
 
 
 _PARTICLE_RE = re.compile(
-    r"^(?:GA_Particle|SA_Particle|SA35_Particle|SA25_Particle|PSO35_Particle|PSO25_Particle|PSO_Particle|Particle)(?P<graph_id>\d+)$",
+    r"^(?:GA_Particle|ASA_Particle|SA_Particle|SA35_Particle|SA25_Particle|PSO35_Particle|PSO25_Particle|PSO_Particle|Particle)(?P<graph_id>\d+)$",
     re.IGNORECASE,
 )
 
@@ -292,7 +292,7 @@ def _process_logger_dirs(directed, id_space, update_generated_yaml):
     total = 0
     failed = 0
 
-    for logger_name in ("PSO_logger", "SA_logger"):
+    for logger_name in ("PSO_logger", "SA_logger", "ASA_logger"):
         source_dir = _resolve_logger_dir(logger_name)
         if source_dir is None:
             print(
@@ -340,7 +340,7 @@ def _process_logger_dirs(directed, id_space, update_generated_yaml):
             print(f"[{logger_name}] Wrote {output_path}")
 
     if total == 0:
-        print("No particle files processed from PSO_logger or SA_logger.")
+        print("No particle files processed from PSO_logger, SA_logger, or ASA_logger.")
     if failed:
         print(f"Encountered {failed} error(s) while processing logger directories.")
 
@@ -376,7 +376,7 @@ def main():
     parser.add_argument(
         "--process-loggers",
         action="store_true",
-        help="Process all Particle*.txt files in PSO_logger/ and SA_logger/ into *_simres outputs.",
+        help="Process all Particle*.txt files in PSO_logger/, SA_logger/, and ASA_logger/ into *_simres outputs.",
     )
     parser.add_argument(
         "--update-generated-yaml",
