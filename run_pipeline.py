@@ -94,7 +94,7 @@ def _run_optimizer(algorithm, graph_name, args, mode):
     }
     runner, particle_path_fn = runners[algorithm]
     start = time.perf_counter()
-    cpu_start = time.process_time()
+    cpu_start = os.times()
     runner(
         graph_name,
         args.chiprows,
@@ -108,12 +108,14 @@ def _run_optimizer(algorithm, graph_name, args, mode):
         tsv_assignment_mode=mode,
         seed=args.seed,
     )
-    cpu_time = time.process_time() - cpu_start
+    cpu_end = os.times()
     runtime = time.perf_counter() - start
+    user_time = cpu_end.user - cpu_start.user
+    system_time = cpu_end.system - cpu_start.system
     particle_path = REPO_ROOT / particle_path_fn(graph_name)
     if not particle_path.is_file():
         raise FileNotFoundError(f"Optimizer did not write particle file: {particle_path}")
-    return particle_path, runtime, cpu_time
+    return particle_path, runtime, user_time, system_time
 
 
 def _parse_simulation_metrics(log_path):
@@ -151,6 +153,9 @@ def _append_csv(row, metrics, csv_path):
         "Population",
         "Iterations",
         "Runtime",
+        "Real Time",
+        "User Time",
+        "System Time",
         "CPU Time",
         "Hopcount",
         "Variance",
@@ -242,7 +247,7 @@ def main():
     mode = _normalize_mode(args.mode)
     graph_name, graph_path, graph_number = _graph_name_and_path(args.graph)
 
-    particle_path, optimizer_runtime, optimizer_cpu_time = _run_optimizer(
+    particle_path, optimizer_runtime, optimizer_user_time, optimizer_system_time = _run_optimizer(
         algorithm,
         graph_name,
         args,
@@ -273,7 +278,10 @@ def main():
         "Population": args.population,
         "Iterations": args.iterations,
         "Runtime": optimizer_runtime,
-        "CPU Time": optimizer_cpu_time,
+        "Real Time": optimizer_runtime,
+        "User Time": optimizer_user_time,
+        "System Time": optimizer_system_time,
+        "CPU Time": optimizer_user_time + optimizer_system_time,
         "Simulation Time": simulation_time,
     }
     row.update(optimizer_metrics)

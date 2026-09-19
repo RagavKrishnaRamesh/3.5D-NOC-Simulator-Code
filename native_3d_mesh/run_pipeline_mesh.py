@@ -19,7 +19,7 @@ def main():
     mode = legacy._normalize_mode(args.mode)
     graph_name, graph_path, graph_number = legacy._graph_name_and_path(args.graph)
 
-    particle_path, optimizer_runtime, optimizer_cpu_time = legacy._run_optimizer(
+    particle_path, optimizer_runtime, optimizer_user_time, optimizer_system_time = legacy._run_optimizer(
         algorithm,
         graph_name,
         args,
@@ -50,7 +50,10 @@ def main():
         "Population": args.population,
         "Iterations": args.iterations,
         "Runtime": optimizer_runtime,
-        "CPU Time": optimizer_cpu_time,
+        "Real Time": optimizer_runtime,
+        "User Time": optimizer_user_time,
+        "System Time": optimizer_system_time,
+        "CPU Time": optimizer_user_time + optimizer_system_time,
         "Simulation Time": simulation_time,
     }
     row.update(optimizer_metrics)
