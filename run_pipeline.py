@@ -135,13 +135,25 @@ def _read_optimizer_metrics(particle_path):
         data = json.load(handle)
 
     return {
-        "Hopcount": data.get("best_cost"),
+        "comm_cost": data.get("best_cost"),
         "Variance": data.get("variance"),
         "Variance Up": data.get("variance_up"),
         "Variance Down": data.get("variance_down"),
         "Normalized Variance": data.get("normalized_variance"),
         "Effective Fitness": data.get("effective_fitness"),
     }
+
+
+def _rename_legacy_cost_column(fieldnames, rows):
+    if "Hopcount" not in fieldnames:
+        return fieldnames
+    for row in rows:
+        old_cost = row.pop("Hopcount", None)
+        if old_cost is not None and not row.get("comm_cost"):
+            row["comm_cost"] = old_cost
+    return list(dict.fromkeys(
+        "comm_cost" if name == "Hopcount" else name for name in fieldnames
+    ))
 
 
 def _append_csv(row, metrics, csv_path):
@@ -157,7 +169,7 @@ def _append_csv(row, metrics, csv_path):
         "User Time",
         "System Time",
         "CPU Time",
-        "Hopcount",
+        "comm_cost",
         "Variance",
         "Variance Up",
         "Variance Down",
@@ -173,6 +185,7 @@ def _append_csv(row, metrics, csv_path):
             reader = csv.DictReader(handle)
             existing_headers = reader.fieldnames or []
             existing_rows = list(reader)
+        existing_headers = _rename_legacy_cost_column(existing_headers, existing_rows)
 
     final_headers = [header for header in existing_headers if header]
     for header in headers + sorted(metrics):
@@ -198,6 +211,7 @@ def _append_csv(row, metrics, csv_path):
                 pending_reader = csv.DictReader(pending_handle)
                 pending_headers = pending_reader.fieldnames or []
                 pending_rows = list(pending_reader)
+            pending_headers = _rename_legacy_cost_column(pending_headers, pending_rows)
             for header in pending_headers:
                 if header not in final_headers:
                     final_headers.append(header)
