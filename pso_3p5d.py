@@ -1144,38 +1144,46 @@ def _edges_from_source(edge_source):
     return edge_source
 
 
-def _trace_tsv_pairs_cached(src_router,
-                            dest_router,
-                            global_tsv_assignment,
-                            router_coordinates,
-                            coord_to_router,
-                            path_cache):
-    key = (src_router, dest_router)
+def _trace_tsv_pairs_to_level_cached(start_router,
+                                     target_level,
+                                     chip,
+                                     global_tsv_assignment,
+                                     router_coordinates,
+                                     path_cache):
+    key = (start_router, target_level)
     cached = path_cache.get(key)
     if cached is not None:
         return cached
 
-    src_coords = router_coordinates[src_router]
-    dest_coords = router_coordinates[dest_router]
-    if src_coords[2] == dest_coords[2]:
+    start_coords = router_coordinates[start_router]
+    if start_coords[2] == target_level:
         path_cache[key] = ()
         return ()
 
-    current_router = src_router
+    current_router = start_router
     traversed_pairs = []
+    start_id, end_id = chip["range"]
+    no_levels = chip["no_levels"]
+    routers_per_level = chip["no_routers"] // no_levels
     while True:
         curr_coords = router_coordinates[current_router]
-        if curr_coords[2] == dest_coords[2]:
+        if curr_coords[2] == target_level:
             break
 
-        direction = 1 if dest_coords[2] > curr_coords[2] else -1
+        direction = 1 if target_level > curr_coords[2] else -1
         tsv_router = global_tsv_assignment.get(current_router, current_router)
         tsv_coords = router_coordinates[tsv_router]
 
         neighbor_z = tsv_coords[2] + direction
-        neighbor_coords = (tsv_coords[0], tsv_coords[1], neighbor_z)
-        neighbor_router = coord_to_router.get(neighbor_coords)
-        if neighbor_router is None:
+        if neighbor_z < 0 or neighbor_z >= no_levels:
+            break
+        neighbor_router = (
+            start_id
+            + neighbor_z * routers_per_level
+            + tsv_coords[1] * CHIP_COLS
+            + tsv_coords[0]
+        )
+        if not (start_id <= neighbor_router <= end_id):
             break
 
         traversed_pairs.append((tsv_router, neighbor_router))
@@ -1217,7 +1225,6 @@ def tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_s
                     tsv_traffic[(lower, upper)] = 0.0
                     tsv_traffic[(upper, lower)] = 0.0
 
-    coord_to_router = {coords: router_id for router_id, coords in router_coordinates.items()}
     path_cache = {}
 
     for src_core, dest_core, bw in _edges_from_source(edge_set_file):
@@ -1227,22 +1234,57 @@ def tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_s
         src_router = core_to_router_map[src_core]
         dest_router = core_to_router_map[dest_core]
 
-        if src_router not in router_to_chip or dest_router not in router_to_chip:
-            continue
-        chip_idx = router_to_chip[src_router]
-        if router_to_chip[dest_router] != chip_idx:
+        src_chip_idx = router_to_chip.get(src_router)
+        dest_chip_idx = router_to_chip.get(dest_router)
+
+        if src_chip_idx is not None and src_chip_idx == dest_chip_idx:
+            src_level = router_coordinates[src_router][2]
+            dest_level = router_coordinates[dest_router][2]
+            if src_level == dest_level:
+                continue
+
+            for pair in _trace_tsv_pairs_to_level_cached(
+                src_router,
+                dest_level,
+                chiplet_layout[src_chip_idx],
+                global_tsv_assignment,
+                router_coordinates,
+                path_cache,
+            ):
+                if pair in tsv_traffic:
+                    tsv_traffic[pair] += bw
             continue
 
-        for pair in _trace_tsv_pairs_cached(
-            src_router,
-            dest_router,
-            global_tsv_assignment,
-            router_coordinates,
-            coord_to_router,
-            path_cache,
-        ):
-            if pair in tsv_traffic:
-                tsv_traffic[pair] += bw
+        # Cross-chiplet traffic uses TSVs inside 3D stacks as it descends from
+        # the source to the base and ascends from the base to the destination.
+        if src_chip_idx is not None:
+            src_level = router_coordinates[src_router][2]
+            if src_level != 0:
+                for pair in _trace_tsv_pairs_to_level_cached(
+                    src_router,
+                    0,
+                    chiplet_layout[src_chip_idx],
+                    global_tsv_assignment,
+                    router_coordinates,
+                    path_cache,
+                ):
+                    if pair in tsv_traffic:
+                        tsv_traffic[pair] += bw
+
+        if dest_chip_idx is not None:
+            dest_level = router_coordinates[dest_router][2]
+            if dest_level != 0:
+                for lower_pair in _trace_tsv_pairs_to_level_cached(
+                    dest_router,
+                    0,
+                    chiplet_layout[dest_chip_idx],
+                    global_tsv_assignment,
+                    router_coordinates,
+                    path_cache,
+                ):
+                    reversed_pair = (lower_pair[1], lower_pair[0])
+                    if reversed_pair in tsv_traffic:
+                        tsv_traffic[reversed_pair] += bw
 
     def variance(values):
         if not values:
