@@ -19,7 +19,7 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Edit these globals before launching a batch.
-ALGORITHMS = ["GA", "SA", "ASA", "PSO"]
+ALGORITHMS = ["GA", "SA", "ASA", "PSO", "QL"]
 MIN_CORE_COUNT = 0
 POPULATION = 1000
 ITERATIONS = 500
@@ -33,6 +33,9 @@ DIRECTED = False
 USE_WSL = False
 DRY_RUN = False
 STOP_ON_FAILURE = False
+PSO_WORKERS = 8
+PSO_PRINT_INTERVAL = 50
+PSO_USE_CACHE = True
 
 
 @contextmanager
@@ -53,12 +56,12 @@ def batch_lock():
         except BlockingIOError as exc:
             raise SystemExit(
                 "Another native 3D mesh graph batch is already running. "
-                "Wait for it to finish before starting GA, SA, ASA, or PSO."
+                "Wait for it to finish before starting GA, SA, ASA, PSO, or QL."
             ) from exc
         except OSError as exc:
             raise SystemExit(
                 "Another native 3D mesh graph batch is already running. "
-                "Wait for it to finish before starting GA, SA, ASA, or PSO."
+                "Wait for it to finish before starting GA, SA, ASA, PSO, or QL."
             ) from exc
         try:
             yield
@@ -170,6 +173,13 @@ def build_command(algorithm, graph_path, dims, results_start_time=None):
         cmd.extend(["--seed", str(SEED)])
     if SIM_SEED is not None:
         cmd.extend(["--sim-seed", str(SIM_SEED)])
+    if algorithm.upper() == "PSO":
+        if PSO_WORKERS is not None:
+            cmd.extend(["--pso-workers", str(PSO_WORKERS)])
+        if PSO_PRINT_INTERVAL is not None:
+            cmd.extend(["--pso-print-interval", str(PSO_PRINT_INTERVAL)])
+        if not PSO_USE_CACHE:
+            cmd.append("--no-pso-cache")
     if DIRECTED:
         cmd.append("--directed")
     if USE_WSL:
