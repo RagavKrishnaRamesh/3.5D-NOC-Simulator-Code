@@ -21,6 +21,7 @@ import os
 import random
 import re
 import time
+from concurrent.futures import ProcessPoolExecutor
 
 try:
     from edge_set_creation import create_edge_set
@@ -45,6 +46,7 @@ MIN_INTERPOSER_GAP = 1
 TSV_REBUILD_ATTEMPTS = 3
 W_FACTOR = 0.5
 RANDOM_SEED = None
+PSO_CACHE_MAX_SIZE = 200000
 
 
 # =========================
@@ -69,6 +71,10 @@ TSV_ASSIGNMENT_REDELF_RANDOM = 1
 TSV_ASSIGNMENT_REDELF = TSV_ASSIGNMENT_REDELF_RANDOM
 TSV_ASSIGNMENT_RANDOM = TSV_ASSIGNMENT_REDELF_RANDOM
 TSV_ASSIGNMENT_MODE = TSV_ASSIGNMENT_REDELF_RANDOM
+
+_WORKER_CHIPLET_LAYOUT = None
+_WORKER_ROUTER_COORDINATES = None
+_WORKER_EDGE_LIST = None
 
 
 # =========================
@@ -1121,6 +1127,65 @@ def build_global_tsv_assignment(particle_state, chiplet_layout):
     return assignment
 
 
+def load_edge_list(edge_set_file):
+    edges = []
+    with open(edge_set_file, "r", encoding="utf-8") as f:
+        for line in f:
+            vals = line.split()
+            if len(vals) < 3:
+                continue
+            edges.append((int(vals[0]), int(vals[1]), float(vals[2])))
+    return edges
+
+
+def _edges_from_source(edge_source):
+    if isinstance(edge_source, str):
+        return load_edge_list(edge_source)
+    return edge_source
+
+
+def _trace_tsv_pairs_cached(src_router,
+                            dest_router,
+                            global_tsv_assignment,
+                            router_coordinates,
+                            coord_to_router,
+                            path_cache):
+    key = (src_router, dest_router)
+    cached = path_cache.get(key)
+    if cached is not None:
+        return cached
+
+    src_coords = router_coordinates[src_router]
+    dest_coords = router_coordinates[dest_router]
+    if src_coords[2] == dest_coords[2]:
+        path_cache[key] = ()
+        return ()
+
+    current_router = src_router
+    traversed_pairs = []
+    while True:
+        curr_coords = router_coordinates[current_router]
+        if curr_coords[2] == dest_coords[2]:
+            break
+
+        direction = 1 if dest_coords[2] > curr_coords[2] else -1
+        tsv_router = global_tsv_assignment.get(current_router, current_router)
+        tsv_coords = router_coordinates[tsv_router]
+
+        neighbor_z = tsv_coords[2] + direction
+        neighbor_coords = (tsv_coords[0], tsv_coords[1], neighbor_z)
+        neighbor_router = coord_to_router.get(neighbor_coords)
+        if neighbor_router is None:
+            break
+
+        traversed_pairs.append((tsv_router, neighbor_router))
+        current_router = neighbor_router
+
+    result = tuple(traversed_pairs)
+    path_cache[key] = result
+    return result
+
+
 def tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_set_file):
     core_to_router_map = build_core_to_router_map(particle_state, chiplet_layout)
     global_tsv_assignment = build_global_tsv_assignment(particle_state, chiplet_layout)
@@ -1153,55 +1218,31 @@ def tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_s
                     tsv_traffic[(upper, lower)] = 0.0
 
     coord_to_router = {coords: router_id for router_id, coords in router_coordinates.items()}
+    path_cache = {}
 
-    with open(edge_set_file, "r", encoding="utf-8") as f:
-        for line in f:
-            vals = line.split()
-            if len(vals) < 3:
-                continue
+    for src_core, dest_core, bw in _edges_from_source(edge_set_file):
+        if src_core not in core_to_router_map or dest_core not in core_to_router_map:
+            continue
 
-            src_core = int(vals[0])
-            dest_core = int(vals[1])
-            bw = float(vals[2])
+        src_router = core_to_router_map[src_core]
+        dest_router = core_to_router_map[dest_core]
 
-            if src_core not in core_to_router_map or dest_core not in core_to_router_map:
-                continue
+        if src_router not in router_to_chip or dest_router not in router_to_chip:
+            continue
+        chip_idx = router_to_chip[src_router]
+        if router_to_chip[dest_router] != chip_idx:
+            continue
 
-            src_router = core_to_router_map[src_core]
-            dest_router = core_to_router_map[dest_core]
-
-            if src_router not in router_to_chip or dest_router not in router_to_chip:
-                continue
-            chip_idx = router_to_chip[src_router]
-            if router_to_chip[dest_router] != chip_idx:
-                continue
-
-            src_coords = router_coordinates[src_router]
-            dest_coords = router_coordinates[dest_router]
-            if src_coords[2] == dest_coords[2]:
-                continue
-
-            current_router = src_router
-            while True:
-                curr_coords = router_coordinates[current_router]
-                if curr_coords[2] == dest_coords[2]:
-                    break
-
-                direction = 1 if dest_coords[2] > curr_coords[2] else -1
-                tsv_router = global_tsv_assignment.get(current_router, current_router)
-                tsv_coords = router_coordinates[tsv_router]
-
-                neighbor_z = tsv_coords[2] + direction
-                neighbor_coords = (tsv_coords[0], tsv_coords[1], neighbor_z)
-                neighbor_router = coord_to_router.get(neighbor_coords)
-                if neighbor_router is None:
-                    break
-
-                pair = (tsv_router, neighbor_router)
-                if pair in tsv_traffic:
-                    tsv_traffic[pair] += bw
-
-                current_router = neighbor_router
+        for pair in _trace_tsv_pairs_cached(
+            src_router,
+            dest_router,
+            global_tsv_assignment,
+            router_coordinates,
+            coord_to_router,
+            path_cache,
+        ):
+            if pair in tsv_traffic:
+                tsv_traffic[pair] += bw
 
     def variance(values):
         if not values:
@@ -1228,23 +1269,19 @@ def cost_function_3p5d(particle_state, chiplet_layout, edge_set_file):
     core_to_router_map = build_core_to_router_map(particle_state, chiplet_layout)
 
     comm_cost = 0.0
-    with open(edge_set_file, "r", encoding="utf-8") as f:
-        for line in f:
-            vals = line.split()
-            if len(vals) < 3:
-                continue
+    distance_cache = {}
+    for src_core, dest_core, bw in _edges_from_source(edge_set_file):
+        if src_core not in core_to_router_map or dest_core not in core_to_router_map:
+            continue
 
-            src_core = int(vals[0])
-            dest_core = int(vals[1])
-            bw = float(vals[2])
-
-            if src_core not in core_to_router_map or dest_core not in core_to_router_map:
-                continue
-
-            src_router = core_to_router_map[src_core]
-            dest_router = core_to_router_map[dest_core]
+        src_router = core_to_router_map[src_core]
+        dest_router = core_to_router_map[dest_core]
+        distance_key = (src_router, dest_router)
+        hop_countij = distance_cache.get(distance_key)
+        if hop_countij is None:
             hop_countij = calculate_count(src_router, dest_router)
-            comm_cost += hop_countij * bw
+            distance_cache[distance_key] = hop_countij
+        comm_cost += hop_countij * bw
 
     return comm_cost
 
@@ -1258,14 +1295,9 @@ def init_normalization_terms(graph_name, edge_set_file, threeD_height):
 
     max_bw = 0.0
     total_bw = 0.0
-    with open(edge_set_file, "r", encoding="utf-8") as f:
-        for line in f:
-            vals = line.split()
-            if len(vals) < 3:
-                continue
-            bw = float(vals[2])
-            max_bw = max(max_bw, bw)
-            total_bw += bw
+    for _, _, bw in _edges_from_source(edge_set_file):
+        max_bw = max(max_bw, bw)
+        total_bw += bw
 
     if max_bw <= 0.0:
         max_bw = 1.0
@@ -1314,7 +1346,12 @@ def edge_set_output_path(graph_name):
 
 def fitness_terms_3p5d(particle_state, chiplet_layout, router_coordinates, edge_set_file):
     cost = cost_function_3p5d(particle_state, chiplet_layout, edge_set_file)
-    var_up, var_down = tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_set_file)
+    var_up, var_down = tsv_variance_3p5d(
+        particle_state,
+        chiplet_layout,
+        router_coordinates,
+        edge_set_file,
+    )
     variance = max(var_up, var_down)
 
     norm_cost = (W_FACTOR * cost) / MAX_COMM_COST if MAX_COMM_COST > 0.0 else cost
@@ -1478,6 +1515,175 @@ def evaluate_particle_state(particle_state, chiplet_layout, router_coordinates, 
     )
 
 
+def _freeze_for_cache(value):
+    if isinstance(value, list):
+        return tuple(_freeze_for_cache(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze_for_cache(item) for item in value)
+    if isinstance(value, dict):
+        return tuple(
+            (key, _freeze_for_cache(value[key]))
+            for key in sorted(value)
+        )
+    return value
+
+
+def particle_state_cache_key(particle_state):
+    return _freeze_for_cache(particle_state)
+
+
+def _assign_particle_metrics(particle, metrics):
+    fit, cost, variance, var_up, var_down = metrics
+    particle.fitness_value = fit
+    particle.cost = cost
+    particle.variance = variance
+    particle.var_up = var_up
+    particle.var_down = var_down
+
+
+def _build_worker_context(chiplet_layout, router_coordinates, edge_list):
+    return {
+        "CHIP_ROWS": CHIP_ROWS,
+        "CHIP_COLS": CHIP_COLS,
+        "BASE_ROWS": BASE_ROWS,
+        "BASE_COLS": BASE_COLS,
+        "BASE_INTERPOSER_ENABLED": BASE_INTERPOSER_ENABLED,
+        "NUM_3D_CHIPLETS": NUM_3D_CHIPLETS,
+        "MAX_COMM_COST": MAX_COMM_COST,
+        "VAR_COMM_SQ": VAR_COMM_SQ,
+        "base_icrt": base_icrt,
+        "TSV_ASSIGNMENT_MODE": TSV_ASSIGNMENT_MODE,
+        "chiplet_layout": chiplet_layout,
+        "router_coordinates": router_coordinates,
+        "edge_list": edge_list,
+    }
+
+
+def _init_pso_worker(context):
+    global CHIP_ROWS, CHIP_COLS, BASE_ROWS, BASE_COLS, BASE_INTERPOSER_ENABLED
+    global NUM_3D_CHIPLETS, MAX_COMM_COST, VAR_COMM_SQ, base_icrt
+    global TSV_ASSIGNMENT_MODE
+    global _WORKER_CHIPLET_LAYOUT, _WORKER_ROUTER_COORDINATES, _WORKER_EDGE_LIST
+
+    CHIP_ROWS = context["CHIP_ROWS"]
+    CHIP_COLS = context["CHIP_COLS"]
+    BASE_ROWS = context["BASE_ROWS"]
+    BASE_COLS = context["BASE_COLS"]
+    BASE_INTERPOSER_ENABLED = context["BASE_INTERPOSER_ENABLED"]
+    NUM_3D_CHIPLETS = context["NUM_3D_CHIPLETS"]
+    MAX_COMM_COST = context["MAX_COMM_COST"]
+    VAR_COMM_SQ = context["VAR_COMM_SQ"]
+    base_icrt = context["base_icrt"]
+    TSV_ASSIGNMENT_MODE = context["TSV_ASSIGNMENT_MODE"]
+    _WORKER_CHIPLET_LAYOUT = context["chiplet_layout"]
+    _WORKER_ROUTER_COORDINATES = context["router_coordinates"]
+    _WORKER_EDGE_LIST = context["edge_list"]
+
+
+def _evaluate_particle_state_worker(args):
+    if _WORKER_CHIPLET_LAYOUT is not None:
+        particle_state = args
+        return evaluate_particle_state(
+            particle_state,
+            _WORKER_CHIPLET_LAYOUT,
+            _WORKER_ROUTER_COORDINATES,
+            _WORKER_EDGE_LIST,
+        )
+
+    particle_state, chiplet_layout, router_coordinates, edge_set_file = args
+    return evaluate_particle_state(
+        particle_state,
+        chiplet_layout,
+        router_coordinates,
+        edge_set_file,
+    )
+
+
+def _resolve_parallel_workers(requested_workers, swarm_size):
+    if requested_workers is None:
+        env_workers = os.environ.get("PSO_WORKERS")
+        if env_workers:
+            requested_workers = int(env_workers)
+
+    if requested_workers is None:
+        cpu_count = os.cpu_count() or 1
+        requested_workers = min(cpu_count, swarm_size, 4)
+
+    return max(1, min(int(requested_workers), max(1, int(swarm_size))))
+
+
+def _resolve_print_interval(print_interval):
+    if print_interval is None:
+        env_interval = os.environ.get("PSO_PRINT_INTERVAL")
+        if env_interval:
+            print_interval = int(env_interval)
+    if print_interval is None:
+        print_interval = 10
+    return max(1, int(print_interval))
+
+
+def _should_print_iteration(iteration, total_iterations, print_interval):
+    iteration_number = iteration + 1
+    return (
+        iteration_number == 1
+        or iteration_number == total_iterations
+        or iteration_number % print_interval == 0
+    )
+
+
+def evaluate_particles_cached(particles,
+                              chiplet_layout,
+                              router_coordinates,
+                              edge_data,
+                              fitness_cache,
+                              executor=None,
+                              cache_stats=None):
+    pending = {}
+
+    for idx, particle in enumerate(particles):
+        key = particle_state_cache_key(particle.state)
+        cached = fitness_cache.get(key)
+        if cached is not None:
+            _assign_particle_metrics(particle, cached)
+            if cache_stats is not None:
+                cache_stats["hits"] += 1
+            continue
+
+        pending.setdefault(key, {
+            "state": copy.deepcopy(particle.state),
+            "indices": [],
+        })
+        pending[key]["indices"].append(idx)
+        if cache_stats is not None:
+            cache_stats["misses"] += 1
+
+    if not pending:
+        return
+
+    keys = list(pending)
+
+    if executor is None:
+        tasks = [
+            (
+                pending[key]["state"],
+                chiplet_layout,
+                router_coordinates,
+                edge_data,
+            )
+            for key in keys
+        ]
+        results = [_evaluate_particle_state_worker(task) for task in tasks]
+    else:
+        tasks = [pending[key]["state"] for key in keys]
+        results = list(executor.map(_evaluate_particle_state_worker, tasks))
+
+    for key, metrics in zip(keys, results):
+        if len(fitness_cache) < PSO_CACHE_MAX_SIZE:
+            fitness_cache[key] = metrics
+        for idx in pending[key]["indices"]:
+            _assign_particle_metrics(particles[idx], metrics)
+
+
 def update_attach_router(particle_state, chiplet_layout, local_best, global_best):
     for chip_idx, chip in enumerate(chiplet_layout):
         idx = attach_index_for_chip(chip)
@@ -1495,7 +1701,8 @@ def update_attach_router(particle_state, chiplet_layout, local_best, global_best
 
 
 class Particle3p5d:
-    def __init__(self, chiplet_layout, router_coordinates, edge_set_file, tsv_list):
+    def __init__(self, chiplet_layout, router_coordinates, edge_set_file, tsv_list,
+                 evaluate_initial=True):
         self.state = generate_particle_state_3p5d(chiplet_layout, tsv_list)
         self.state = repair_particle_state(
             self.state,
@@ -1513,7 +1720,8 @@ class Particle3p5d:
         self.var_up = 0.0
         self.var_down = 0.0
 
-        self.evaluate(chiplet_layout, router_coordinates, edge_set_file)
+        if evaluate_initial:
+            self.evaluate(chiplet_layout, router_coordinates, edge_set_file)
 
     def evaluate(self, chiplet_layout, router_coordinates, edge_set_file):
         fit, cost, variance, var_up, var_down = evaluate_particle_state(
@@ -1757,7 +1965,10 @@ def run_pso_3p5d(graph_name,
                  num_2p5d_units, num_3d_units,
                  iterations, swarm_size,
                  tsv_assignment_mode=TSV_ASSIGNMENT_RANDOM,
-                 seed=None):
+                 seed=None,
+                 parallel_workers=None,
+                 use_fitness_cache=True,
+                 print_interval=None):
     if swarm_size <= 0:
         raise ValueError("swarm_size must be positive")
 
@@ -1785,68 +1996,123 @@ def run_pso_3p5d(graph_name,
     input_graph = graph_input_path(graph_name)
     edge_set_file = edge_set_output_path(graph_name)
     create_edge_set(input_graph, edge_set_file)
+    edge_list = load_edge_list(edge_set_file)
 
     router_coordinates = assign_router_coordinates(total_routers)
-    init_normalization_terms(graph_name, edge_set_file, threeD_height)
+    init_normalization_terms(graph_name, edge_list, threeD_height)
 
-    tsv_list = list(range(total_routers))
-    particles = [
-        Particle3p5d(chiplet_layout, router_coordinates, edge_set_file, tsv_list)
-        for _ in range(swarm_size)
-    ]
-    local_best = [particle.clone() for particle in particles]
-
-    global_best = min(local_best, key=lambda p: p.fitness_value).clone()
-    best_fitness_snapshot = global_best.fitness_value
-    stall_count = 0
-
-    for iteration in range(iterations):
-        for idx, particle in enumerate(particles):
-            particle.evaluate(chiplet_layout, router_coordinates, edge_set_file)
-
-            if particle.fitness_value < local_best[idx].fitness_value:
-                local_best[idx] = particle.clone()
-
-            if particle.fitness_value < global_best.fitness_value:
-                global_best = particle.clone()
-
-        if global_best.fitness_value < best_fitness_snapshot:
-            best_fitness_snapshot = global_best.fitness_value
-            stall_count = 0
-        else:
-            stall_count += 1
-
-        print(
-            f"Iteration {iteration + 1}: "
-            f"HopCost = {global_best.cost:.6f} | "
-            f"Variance = {global_best.variance:.6f} "
-            f"(up {global_best.var_up:.6f}, down {global_best.var_down:.6f}) | "
-            f"EffectiveFitness = {global_best.fitness_value:.6f}"
+    worker_count = _resolve_parallel_workers(parallel_workers, swarm_size)
+    resolved_print_interval = _resolve_print_interval(print_interval)
+    fitness_cache = {} if use_fitness_cache else None
+    cache_stats = {"hits": 0, "misses": 0}
+    executor = None
+    if worker_count > 1:
+        executor = ProcessPoolExecutor(
+            max_workers=worker_count,
+            initializer=_init_pso_worker,
+            initargs=(_build_worker_context(chiplet_layout, router_coordinates, edge_list),),
         )
 
-        if stall_count >= CONVERGENCE_STALL_LIMIT:
-            print(
-                f"Early stopping at iteration {iteration + 1} after "
-                f"{CONVERGENCE_STALL_LIMIT} stagnant iterations without improvement."
-            )
-            break
+    print(
+        f"PSO evaluation: workers={worker_count}, "
+        f"fitness_cache={'on' if use_fitness_cache else 'off'}, "
+        f"print_interval={resolved_print_interval}"
+    )
 
+    tsv_list = list(range(total_routers))
+    try:
+        particles = [
+            Particle3p5d(
+                chiplet_layout,
+                router_coordinates,
+                edge_set_file,
+                tsv_list,
+                evaluate_initial=False,
+            )
+            for _ in range(swarm_size)
+        ]
+        evaluate_particles_cached(
+            particles,
+            chiplet_layout,
+            router_coordinates,
+            edge_list,
+            fitness_cache if fitness_cache is not None else {},
+            executor=executor,
+            cache_stats=cache_stats if fitness_cache is not None else None,
+        )
+        local_best = [particle.clone() for particle in particles]
+
+        global_best = min(local_best, key=lambda p: p.fitness_value).clone()
+        best_fitness_snapshot = global_best.fitness_value
+        stall_count = 0
+
+        for iteration in range(iterations):
+            evaluate_particles_cached(
+                particles,
+                chiplet_layout,
+                router_coordinates,
+                edge_list,
+                fitness_cache if fitness_cache is not None else {},
+                executor=executor,
+                cache_stats=cache_stats if fitness_cache is not None else None,
+            )
+
+            for idx, particle in enumerate(particles):
+                if particle.fitness_value < local_best[idx].fitness_value:
+                    local_best[idx] = particle.clone()
+
+                if particle.fitness_value < global_best.fitness_value:
+                    global_best = particle.clone()
+
+            if global_best.fitness_value < best_fitness_snapshot:
+                best_fitness_snapshot = global_best.fitness_value
+                stall_count = 0
+            else:
+                stall_count += 1
+
+            if _should_print_iteration(iteration, iterations, resolved_print_interval):
+                print(
+                    f"Iteration {iteration + 1}: "
+                    f"HopCost = {global_best.cost:.6f} | "
+                    f"Variance = {global_best.variance:.6f} "
+                    f"(up {global_best.var_up:.6f}, down {global_best.var_down:.6f}) | "
+                    f"EffectiveFitness = {global_best.fitness_value:.6f}"
+                )
+
+            if stall_count >= CONVERGENCE_STALL_LIMIT:
+                print(
+                    f"Early stopping at iteration {iteration + 1} after "
+                    f"{CONVERGENCE_STALL_LIMIT} stagnant iterations without improvement."
+                )
+                break
+
+            for idx, particle in enumerate(particles):
+                update_particle(
+                    particle,
+                    local_best=local_best[idx],
+                    global_best=global_best,
+                    chiplet_layout=chiplet_layout,
+                    router_coordinates=router_coordinates,
+                    edge_set_file=edge_list,
+                )
+
+        evaluate_particles_cached(
+            particles,
+            chiplet_layout,
+            router_coordinates,
+            edge_list,
+            fitness_cache if fitness_cache is not None else {},
+            executor=executor,
+            cache_stats=cache_stats if fitness_cache is not None else None,
+        )
         for idx, particle in enumerate(particles):
-            update_particle(
-                particle,
-                local_best=local_best[idx],
-                global_best=global_best,
-                chiplet_layout=chiplet_layout,
-                router_coordinates=router_coordinates,
-                edge_set_file=edge_set_file,
-            )
-
-    for idx, particle in enumerate(particles):
-        particle.evaluate(chiplet_layout, router_coordinates, edge_set_file)
-        if particle.fitness_value < local_best[idx].fitness_value:
-            local_best[idx] = particle.clone()
-        if particle.fitness_value < global_best.fitness_value:
-            global_best = particle.clone()
+            if particle.fitness_value < local_best[idx].fitness_value:
+                local_best[idx] = particle.clone()
+            if particle.fitness_value < global_best.fitness_value:
+                global_best = particle.clone()
+    finally:
+        if executor is not None:
+            executor.shutdown()
 
     end_time = time.time()
 
@@ -1859,6 +2125,11 @@ def run_pso_3p5d(graph_name,
         f"Variance:      {global_best.variance:.6f} "
         f"(up {global_best.var_up:.6f}, down {global_best.var_down:.6f})"
     )
+    if fitness_cache is not None:
+        print(
+            f"Fitness cache: {cache_stats['hits']} hits, "
+            f"{cache_stats['misses']} misses, {len(fitness_cache)} stored states"
+        )
     print(f"Real time:     {end_time - start_time:.2f} s")
 
     print("\nBest Particle State (by chiplet):")
@@ -1922,6 +2193,26 @@ def main():
         default=None,
         help="Random seed for PSO. Omit to use the current system time.",
     )
+    parser.add_argument(
+        "--parallel-workers",
+        type=int,
+        default=None,
+        help=(
+            "Number of worker processes for particle fitness evaluation. "
+            "Default: min(cpu_count, swarm_size, 4). Use 1 for sequential."
+        ),
+    )
+    parser.add_argument(
+        "--no-fitness-cache",
+        action="store_true",
+        help="Disable the particle-state fitness cache.",
+    )
+    parser.add_argument(
+        "--print-interval",
+        type=int,
+        default=None,
+        help="Print PSO progress every N iterations. Default: 10.",
+    )
     args = parser.parse_args()
 
     run_pso_3p5d(
@@ -1936,6 +2227,9 @@ def main():
         args.swarm_size,
         args.tsv_assignment_mode,
         seed=args.seed,
+        parallel_workers=args.parallel_workers,
+        use_fitness_cache=not args.no_fitness_cache,
+        print_interval=args.print_interval,
     )
 
 

@@ -1,0 +1,386 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    columns=fullflexible
+}
+
+\title{Q-Learning Based Optimization for 3.5D NoC}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Goal}
+
+The goal of the Q-learning optimizer is to find a good 3.5D NoC placement.
+A placement contains:
+
+\begin{itemize}[noitemsep]
+    \item core-to-router mapping,
+    \item TSV placement,
+    \item TSV assignment,
+    \item chiplet attach router.
+\end{itemize}
+
+The optimizer starts from random valid placements and repeatedly applies small
+changes. Q-learning learns which type of change is useful in each search
+situation.
+
+\section{Chromosome Representation}
+
+For a 3D chiplet, one gene is:
+
+\[
+[\text{core\_to\_router},\ \text{tsv\_placement},\ \text{tsv\_assignment},\ \text{base\_attach\_router}]
+\]
+
+For a 2.5D chiplet, one gene is:
+
+\[
+[\text{core\_to\_router},\ \text{base\_attach\_router}]
+\]
+
+The complete chromosome is a list of genes, one per chiplet.
+
+\section{Actions}
+
+At each iteration, Q-learning chooses one action from the following set:
+
+\[
+A =
+\{
+\text{swap\_mapping},
+\text{reverse\_mapping},
+\text{flip\_tsv},
+\text{move\_attach}
+\}
+\]
+
+\begin{table}[h]
+\centering
+\begin{tabular}{>{\ttfamily}l p{0.65\linewidth}}
+\toprule
+Action & Meaning \\
+\midrule
+swap\_mapping & Swap two cores between two router positions. \\
+reverse\_mapping & Reverse a continuous block of the core-to-router mapping. \\
+flip\_tsv & Add or remove one TSV position by flipping one TSV bit. \\
+move\_attach & Change the router through which a chiplet connects to the base/interposer. \\
+\bottomrule
+\end{tabular}
+\caption{Q-learning actions used by the optimizer.}
+\end{table}
+
+\subsection{Example: swap\_mapping}
+
+Before:
+
+\[
+\begin{array}{c|cccc}
+\text{Router} & 0 & 1 & 2 & 3 \\
+\hline
+\text{Core} & A & B & C & D
+\end{array}
+\]
+
+Swap router 1 and router 3:
+
+\[
+\begin{array}{c|cccc}
+\text{Router} & 0 & 1 & 2 & 3 \\
+\hline
+\text{Core} & A & D & C & B
+\end{array}
+\]
+
+\subsection{Example: flip\_tsv}
+
+Suppose TSV placement is:
+
+\[
+[1,\ 0,\ 1,\ 0]
+\]
+
+If position 1 is flipped:
+
+\[
+[1,\ 1,\ 1,\ 0]
+\]
+
+If position 2 is flipped:
+
+\[
+[1,\ 0,\ 0,\ 0]
+\]
+
+After every action, the chromosome is repaired to satisfy mapping and TSV
+constraints.
+
+\section{State}
+
+The Q-learning state tells the agent the current search situation. The state is:
+
+\[
+s = (\text{fitness\_bucket},\ \text{stall\_bucket})
+\]
+
+It is computed from two values:
+
+\[
+\text{relative\_gap}
+=
+\frac{\text{current\_fitness} - \text{best\_fitness}}
+{\text{best\_fitness}}
+\]
+
+and
+
+\[
+\text{stall\_count}
+=
+\text{number of iterations without improvement}
+\]
+
+\subsection{Fitness Bucket}
+
+\[
+\text{fitness\_bucket} =
+\begin{cases}
+0, & \text{relative\_gap} < 0.01 \\
+1, & \text{relative\_gap} < 0.05 \\
+2, & \text{relative\_gap} < 0.15 \\
+3, & \text{otherwise}
+\end{cases}
+\]
+
+\subsection{Stall Bucket}
+
+\[
+\text{stall\_bucket} =
+\begin{cases}
+0, & \text{stall\_count} < 10 \\
+1, & \text{stall\_count} < 40 \\
+2, & \text{stall\_count} < 100 \\
+3, & \text{otherwise}
+\end{cases}
+\]
+
+Example:
+
+\[
+s = (0,0)
+\]
+
+means the current solution is very close to the best solution and the search is
+not stuck.
+
+\[
+s = (3,3)
+\]
+
+means the current solution is far from the best solution and the search is badly
+stuck.
+
+\section{Q-Table}
+
+The Q-table stores one score for each state-action pair:
+
+\[
+Q(s,a)
+\]
+
+Example:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{c c c c c}
+\toprule
+State & swap\_mapping & reverse\_mapping & flip\_tsv & move\_attach \\
+\midrule
+$(0,0)$ & 0.80 & 0.20 & -0.10 & 0.05 \\
+$(1,2)$ & 0.05 & 0.10 & 0.85 & 0.40 \\
+$(3,3)$ & -0.10 & 0.25 & 0.60 & 0.75 \\
+\bottomrule
+\end{tabular}
+\caption{Example Q-table.}
+\end{table}
+
+If the current state is $(1,2)$, the best action is \texttt{flip\_tsv}, because
+it has the highest Q-value:
+
+\[
+Q((1,2), \text{flip\_tsv}) = 0.85
+\]
+
+\section{Action Selection}
+
+The optimizer uses epsilon-greedy action selection.
+
+With probability $\epsilon$, it explores:
+
+\[
+a = \text{random action}
+\]
+
+With probability $1-\epsilon$, it exploits:
+
+\[
+a =
+\arg\max_{a'} Q(s,a')
+\]
+
+At the beginning, $\epsilon$ is high, so the optimizer explores more. Over time,
+$\epsilon$ decays, so the optimizer uses learned actions more often.
+
+\section{Reward}
+
+After applying an action, the candidate fitness is computed.
+
+\[
+\text{improvement}
+=
+\text{current\_fitness} - \text{candidate\_fitness}
+\]
+
+The reward is:
+
+\[
+r =
+\frac{\text{improvement}}
+{|\text{current\_fitness}|}
+\]
+
+If the candidate becomes the best solution found so far, an extra reward is
+added:
+
+\[
+r = r + 1
+\]
+
+If the candidate is worse or equal, a small penalty is applied:
+
+\[
+r = r - 0.02
+\]
+
+\section{Q-Value Update}
+
+The Q-table is updated using the standard Q-learning equation:
+
+\[
+Q(s,a)
+\leftarrow
+Q(s,a)
+ +
+\alpha
+\left[
+r
+ +
+\gamma \max_{a'} Q(s',a')
+ -
+Q(s,a)
+\right]
+\]
+
+where:
+
+\begin{itemize}[noitemsep]
+    \item $s$ is the current state,
+    \item $a$ is the selected action,
+    \item $r$ is the reward,
+    \item $s'$ is the next state,
+    \item $\alpha$ is the learning rate,
+    \item $\gamma$ is the discount factor.
+\end{itemize}
+
+\section{Algorithm Flow}
+
+\begin{enumerate}
+    \item Build the 3.5D topology.
+    \item Create the edge set from the input graph.
+    \item Generate a random initial population.
+    \item Pick the best initial chromosome as the current solution.
+    \item Initialize the Q-table as empty.
+    \item For each iteration:
+    \begin{enumerate}
+        \item Compute current state.
+        \item Select an action using epsilon-greedy policy.
+        \item Apply the selected action.
+        \item Repair the chromosome.
+        \item Compute candidate fitness.
+        \item Compute reward.
+        \item Update the Q-table.
+        \item Update best solution if candidate is better.
+        \item Decay epsilon.
+    \end{enumerate}
+    \item Write the best chromosome as a particle file.
+\end{enumerate}
+
+\section{Pseudocode}
+
+\begin{lstlisting}
+initialize Q-table as empty
+generate initial chromosomes
+current = best initial chromosome
+best = current
+
+for each iteration:
+    state = get_state(current_fitness, best_fitness, stall_count)
+
+    if random() < epsilon:
+        action = random action
+    else:
+        action = action with highest Q(state, action)
+
+    candidate = apply_action(current, action)
+    candidate = repair(candidate)
+    candidate_fitness = evaluate(candidate)
+
+    reward = compute_reward(current_fitness, candidate_fitness)
+
+    next_state = get_state(candidate_fitness, best_fitness, stall_count)
+
+    Q(state, action) =
+        Q(state, action)
+        + alpha * (reward + gamma * max Q(next_state, *) - Q(state, action))
+
+    if candidate is accepted:
+        current = candidate
+
+    if candidate is better than best:
+        best = candidate
+        stall_count = 0
+    else:
+        stall_count = stall_count + 1
+
+    epsilon = max(epsilon_min, epsilon * epsilon_decay)
+
+write best particle
+\end{lstlisting}
+
+\section{Summary}
+
+The Q-learning optimizer learns which mutation action is useful in each search
+situation. Instead of randomly applying changes throughout the run, it builds a
+Q-table that remembers which actions improved fitness before.
+
+\[
+\text{Q-learning memory}
+=
+\text{which action works best in which state}
+\]
+
+\end{document}

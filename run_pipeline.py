@@ -13,6 +13,8 @@ from ga_3pt5d import particle_output_path as ga_particle_output_path
 from ga_3pt5d import run_ga_3p5d
 from pso_3p5d import particle_output_path as pso_particle_output_path
 from pso_3p5d import run_pso_3p5d
+from q_learning_35d import particle_output_path as ql_particle_output_path
+from q_learning_35d import run_q_learning_35d
 from run_simulator import run_simulation
 from asa_3p5d import particle_output_path as asa_particle_output_path
 from asa_3p5d import run_asa_3p5d
@@ -30,8 +32,16 @@ METRIC_RE = re.compile(
 
 def _normalize_algorithm(value):
     algorithm = str(value).strip().upper()
-    if algorithm not in {"GA", "PSO", "SA", "ASA"}:
-        raise ValueError("algorithm must be GA, PSO, SA, or ASA")
+    aliases = {
+        "QLEARNING": "QL",
+        "Q_LEARNING": "QL",
+        "Q-LEARNING": "QL",
+        "Q_LEARNING_35D": "QL",
+        "Q-LEARNING-35D": "QL",
+    }
+    algorithm = aliases.get(algorithm, algorithm)
+    if algorithm not in {"GA", "PSO", "SA", "ASA", "QL"}:
+        raise ValueError("algorithm must be GA, PSO, SA, ASA, or QL")
     return algorithm
 
 
@@ -110,10 +120,20 @@ def _run_optimizer(algorithm, graph_name, args, mode):
         "PSO": (run_pso_3p5d, pso_particle_output_path),
         "SA": (run_sa_3p5d, sa_particle_output_path),
         "ASA": (run_asa_3p5d, asa_particle_output_path),
+        "QL": (run_q_learning_35d, ql_particle_output_path),
     }
     runner, particle_path_fn = runners[algorithm]
     start = time.perf_counter()
     cpu_start = os.times()
+    runner_kwargs = {
+        "tsv_assignment_mode": mode,
+        "seed": args.seed,
+    }
+    if algorithm == "PSO":
+        runner_kwargs["parallel_workers"] = args.pso_workers
+        runner_kwargs["use_fitness_cache"] = not args.no_pso_cache
+        runner_kwargs["print_interval"] = args.pso_print_interval
+
     runner(
         graph_name,
         args.chiprows,
@@ -124,8 +144,7 @@ def _run_optimizer(algorithm, graph_name, args, mode):
         args.num3d,
         args.iterations,
         args.population,
-        tsv_assignment_mode=mode,
-        seed=args.seed,
+        **runner_kwargs,
     )
     cpu_end = os.times()
     runtime = time.perf_counter() - start
@@ -246,7 +265,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Run optimizer, generate YAML/traffic table, simulate, and log results."
     )
-    parser.add_argument("--algorithm", required=True, help="GA, PSO, SA, or ASA")
+    parser.add_argument("--algorithm", required=True, help="GA, PSO, SA, ASA, or QL")
     parser.add_argument("--graph", required=True, help="Graph number x or graph path")
     parser.add_argument("--chiprows", type=int, required=True)
     parser.add_argument("--chipcols", type=int, required=True)
@@ -257,6 +276,23 @@ def parse_args():
     parser.add_argument("--population", type=int, required=True)
     parser.add_argument("--iterations", type=int, required=True)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--pso-workers",
+        type=int,
+        default=None,
+        help="PSO worker processes for fitness evaluation; use 1 for sequential.",
+    )
+    parser.add_argument(
+        "--no-pso-cache",
+        action="store_true",
+        help="Disable PSO particle-state fitness cache.",
+    )
+    parser.add_argument(
+        "--pso-print-interval",
+        type=int,
+        default=None,
+        help="Print PSO progress every N iterations. Default: 10.",
+    )
     parser.add_argument(
         "--mode",
         default="random",

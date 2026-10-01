@@ -267,7 +267,7 @@ def _generate_traffic_table(graph_path, particle_path, output_path, directed, id
 
 
 _PARTICLE_RE = re.compile(
-    r"^(?:GA_Particle|ASA_Particle|SA_Particle|SA35_Particle|SA25_Particle|PSO35_Particle|PSO25_Particle|PSO_Particle|Particle)(?P<graph_id>\d+)$",
+    r"^(?:GA_Particle|ASA_Particle|SA_Particle|QL_Particle|SA35_Particle|SA25_Particle|PSO35_Particle|PSO25_Particle|PSO_Particle|Particle)(?P<graph_id>\d+)$",
     re.IGNORECASE,
 )
 
@@ -292,7 +292,7 @@ def _process_logger_dirs(directed, id_space, update_generated_yaml):
     total = 0
     failed = 0
 
-    for logger_name in ("PSO_logger", "SA_logger", "ASA_logger"):
+    for logger_name in ("PSO_logger", "SA_logger", "ASA_logger", "QL_logger"):
         source_dir = _resolve_logger_dir(logger_name)
         if source_dir is None:
             print(

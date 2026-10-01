@@ -2,7 +2,7 @@
 
 This repo runs a full NoC optimization and simulation flow:
 
-1. Run an optimizer: `GA`, `PSO`, `SA`, or `ASA`
+1. Run an optimizer: `GA`, `PSO`, `SA`, `ASA`, or `QL`
 2. Write the best particle to `Particles/`
 3. Generate YAML topology in `YAML/`
 4. Generate traffic table in `TrafficTable/`
@@ -33,7 +33,7 @@ python run_pipeline.py --algorithm GA --graph 4 --chiprows 2 --chipcols 2 --two5
 General form:
 
 ```powershell
-python run_pipeline.py --algorithm <GA|PSO|SA|ASA> --graph <graph_number_or_path> --chiprows <rows> --chipcols <cols> --two5dwidth <width> --threedheight <height> --num2p5d <count> --num3d <count> --population <count> --iterations <count> --use-wsl
+python run_pipeline.py --algorithm <GA|PSO|SA|ASA|QL> --graph <graph_number_or_path> --chiprows <rows> --chipcols <cols> --two5dwidth <width> --threedheight <height> --num2p5d <count> --num3d <count> --population <count> --iterations <count> --use-wsl
 ```
 
 You can also use the dotted aliases:
@@ -105,6 +105,12 @@ ASA example:
 python run_pipeline.py --algorithm ASA --graph 4 --chiprows 2 --chipcols 2 --two5dwidth 4 --threedheight 4 --num2p5d 1 --num3d 1 --population 200 --iterations 1000 --use-wsl
 ```
 
+Q-learning example:
+
+```powershell
+python run_pipeline.py --algorithm QL --graph 4 --chiprows 2 --chipcols 2 --two5dwidth 4 --threedheight 4 --num2p5d 1 --num3d 1 --population 200 --iterations 1000 --use-wsl
+```
+
 ## Optional Arguments
 
 Use a fixed optimizer seed:
@@ -162,8 +168,8 @@ LOG/GA_Particle4.log
 RESULTS_<mode>_<algorithm>_<YYYYMMDD_HHMMSS>.csv
 ```
 
-`<mode>` is `random` or `elevator`; `<algorithm>` is `ga`, `pso`, `sa`, or
-`asa`. Each algorithm has its own CSV.
+`<mode>` is `random` or `elevator`; `<algorithm>` is `ga`, `pso`, `sa`, `asa`,
+or `ql`. Each algorithm has its own CSV.
 
 The CSV includes optimizer metrics and simulator metrics, including:
 

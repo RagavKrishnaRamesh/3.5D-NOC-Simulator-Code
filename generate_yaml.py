@@ -855,7 +855,7 @@ def _parse_index(value):
 
 
 _PARTICLE_RE = re.compile(
-    r"^(?:GA_Particle|ASA_Particle|SA_Particle|SA35_Particle|SA25_Particle|PSO35_Particle|PSO25_Particle|PSO_Particle|Particle)(?P<graph_id>\d+)$",
+    r"^(?:GA_Particle|ASA_Particle|SA_Particle|QL_Particle|SA35_Particle|SA25_Particle|PSO35_Particle|PSO25_Particle|PSO_Particle|Particle)(?P<graph_id>\d+)$",
     re.IGNORECASE,
 )
 
@@ -866,6 +866,7 @@ def _known_particle_dirs():
         Path("Particles"),
         Path("GA_Particles"),
         Path("ASA_Particles"),
+        Path("QL_Particles"),
         Path("SA35_Particles"),
         Path("SA25_Particles"),
         Path("PSO35_Particles"),
@@ -900,6 +901,7 @@ def _resolve_particle_by_index(index):
         f"GA_Particle{idx}.txt",
         f"ASA_Particle{idx}.txt",
         f"SA_Particle{idx}.txt",
+        f"QL_Particle{idx}.txt",
         f"SA35_Particle{idx}.txt",
         f"SA25_Particle{idx}.txt",
         f"PSO35_Particle{idx}.txt",
@@ -973,7 +975,7 @@ def _process_logger_particles(logger_name):
 def _process_all_loggers():
     total = 0
     failed = 0
-    for logger_name in ("PSO_logger", "SA_logger", "ASA_logger"):
+    for logger_name in ("PSO_logger", "SA_logger", "ASA_logger", "QL_logger"):
         p_count, f_count = _process_logger_particles(logger_name)
         total += p_count
         failed += f_count
