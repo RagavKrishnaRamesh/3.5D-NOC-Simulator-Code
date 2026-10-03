@@ -129,10 +129,6 @@ def _run_optimizer(algorithm, graph_name, args, mode):
         "tsv_assignment_mode": mode,
         "seed": args.seed,
     }
-    if algorithm == "PSO":
-        runner_kwargs["parallel_workers"] = args.pso_workers
-        runner_kwargs["use_fitness_cache"] = not args.no_pso_cache
-        runner_kwargs["print_interval"] = args.pso_print_interval
 
     runner(
         graph_name,
@@ -276,23 +272,6 @@ def parse_args():
     parser.add_argument("--population", type=int, required=True)
     parser.add_argument("--iterations", type=int, required=True)
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument(
-        "--pso-workers",
-        type=int,
-        default=None,
-        help="PSO worker processes for fitness evaluation; use 1 for sequential.",
-    )
-    parser.add_argument(
-        "--no-pso-cache",
-        action="store_true",
-        help="Disable PSO particle-state fitness cache.",
-    )
-    parser.add_argument(
-        "--pso-print-interval",
-        type=int,
-        default=None,
-        help="Print PSO progress every N iterations. Default: 10.",
-    )
     parser.add_argument(
         "--mode",
         default="random",
