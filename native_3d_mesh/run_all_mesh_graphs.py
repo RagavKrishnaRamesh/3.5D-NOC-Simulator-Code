@@ -33,9 +33,6 @@ DIRECTED = False
 USE_WSL = False
 DRY_RUN = False
 STOP_ON_FAILURE = False
-PSO_WORKERS = 8
-PSO_PRINT_INTERVAL = 50
-PSO_USE_CACHE = True
 
 
 @contextmanager
@@ -173,13 +170,6 @@ def build_command(algorithm, graph_path, dims, results_start_time=None):
         cmd.extend(["--seed", str(SEED)])
     if SIM_SEED is not None:
         cmd.extend(["--sim-seed", str(SIM_SEED)])
-    if algorithm.upper() == "PSO":
-        if PSO_WORKERS is not None:
-            cmd.extend(["--pso-workers", str(PSO_WORKERS)])
-        if PSO_PRINT_INTERVAL is not None:
-            cmd.extend(["--pso-print-interval", str(PSO_PRINT_INTERVAL)])
-        if not PSO_USE_CACHE:
-            cmd.append("--no-pso-cache")
     if DIRECTED:
         cmd.append("--directed")
     if USE_WSL:
