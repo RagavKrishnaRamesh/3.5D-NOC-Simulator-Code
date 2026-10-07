@@ -173,7 +173,7 @@ def build_command(algorithm, graph_path, dims, results_start_time=None):
         cmd.extend(["--seed", str(SEED)])
     if SIM_SEED is not None:
         cmd.extend(["--sim-seed", str(SIM_SEED)])
-    if algorithm.upper() == "PSO":
+    if algorithm.upper() in {"PSO", "PSO_WITH_QL"}:
         if PSO_WORKERS is not None:
             cmd.extend(["--pso-workers", str(PSO_WORKERS)])
         if PSO_PRINT_INTERVAL is not None:

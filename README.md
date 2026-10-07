@@ -225,3 +225,49 @@ Use help for the latest CLI options:
 python run_pipeline.py --help
 python run_simulator.py --help
 ```
+
+
+### Q-learning-guided PSO (`pso_with_ql`)
+
+This branch starts at `840cb7e` (cached/parallel PSO and optimized mesh runners).
+`pso_with_ql.py` is a standalone variant of that PSO engine, retaining particle
+fitness memoization, cached distance/TSV paths, and process pool evaluation.
+Parallelism uses processes, as in the historical version, rather than threads.
+
+A fresh tabular Q-learning controller is trained during each run. Its state
+combines stagnation (ten-iteration buckets) and the mean-to-best fitness gap.
+Actions select (inertia, cognitive, social) probability profiles: exploration
+(0.50, 0.04, 0.02), personal-best (0.10, 0.30, 0.05), or global-best
+(0.10, 0.05, 0.30). The reward is the normalized improvement in mean and best
+fitness after the selected profile is evaluated. Bellman updates use alpha=0.35,
+gamma=0.85 and epsilon decays from 0.40 to a minimum of 0.05. Final evaluations
+use a terminal update with no bootstrap. Q tables, action counts, and parameters
+are saved in the particle JSON. Performance gains have not been benchmarked.
+
+Optimizer only (positional dimensions, iterations, swarm size, TSV mode):
+
+```sh
+python pso_with_ql.py Graph1 2 2 2 2 1 1 500 1000 0 --seed 10 --parallel-workers 8
+```
+
+Full legacy pipeline (optimizer, YAML, traffic, Noxim, results CSV):
+
+```sh
+python run_pso_with_ql.py --graph 1 --chiprows 2 --chipcols 2 --two5dwidth 2 --threedheight 2 --num2p5d 1 --num3d 1 --iterations 500 --population 1000 --mode elevator --seed 10 --pso-workers 8
+```
+
+Native mesh single graph: use the same flags with
+`python native_3d_mesh/run_pipeline_mesh.py --algorithm PSO_WITH_QL`.
+Native mesh all graphs:
+
+```sh
+python native_3d_mesh/run_pso_with_ql_mesh_graphs.py
+```
+
+Edit batch settings in `native_3d_mesh/run_all_mesh_graphs.py` before a batch.
+Use `--no-pso-cache` in pipelines or `--no-fitness-cache` for optimizer-only runs
+to disable persistent fitness memoization. Particles use the
+`PSO_WITH_QL_Particle` prefix and CSVs use `pso_with_ql` in their filename.
+Provide graph inputs under `Graphs/` and the Noxim executable before simulation;
+Windows users can pass `--use-wsl` for a Linux Noxim executable.
+Run verification with `python -m unittest test_pso_with_ql -v`.
