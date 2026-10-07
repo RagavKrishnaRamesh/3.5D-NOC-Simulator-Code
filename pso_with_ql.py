@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+from bisect import bisect_right
 import copy
 import json
 import math
@@ -1963,6 +1964,10 @@ class QLearningController:
     """Learn PSO probability profiles from evaluated generation improvements."""
 
     profiles = ((0.50, 0.04, 0.02), (0.10, 0.30, 0.05), (0.10, 0.05, 0.30))
+    stall_bucket_count = 10
+    # Relative gaps: 1%, 2%, 3%, 5%, 7.5%, 10%, 15%, 20%, 30%, 50%, 100%.
+    gap_bucket_edges = (0.01, 0.02, 0.03, 0.05, 0.075, 0.10,
+                        0.15, 0.20, 0.30, 0.50, 1.0)
 
     def __init__(self):
         self.table = {}
@@ -1970,10 +1975,16 @@ class QLearningController:
         self.previous = None
         self.updates = 0
         self.action_counts = [0, 0, 0]
+        self.stall_bucket_width = max(
+            1, math.ceil(CONVERGENCE_STALL_LIMIT / self.stall_bucket_count)
+        )
 
     def state(self, mean, best, stall):
+        """Map stagnation and relative fitness gap to 10 x 12 = 120 states."""
         gap = max(0.0, (mean - best) / max(abs(best), 1e-12))
-        return (min(stall // 10, 9), 0 if gap < 0.05 else 1 if gap < 0.25 else 2)
+        stall_bucket = min(self.stall_bucket_count - 1,
+                           max(0, stall) // self.stall_bucket_width)
+        return (stall_bucket, bisect_right(self.gap_bucket_edges, gap))
 
     def observe(self, mean, best, stall, terminal=False):
         state = self.state(mean, best, stall)
@@ -2001,6 +2012,13 @@ class QLearningController:
         return {"alpha": 0.35, "gamma": 0.85, "epsilon": self.epsilon,
                 "updates": self.updates, "action_counts": self.action_counts,
                 "profiles": self.profiles,
+                "state_bucketing": {
+                    "stall_bucket_count": self.stall_bucket_count,
+                    "stall_bucket_width": self.stall_bucket_width,
+                    "gap_bucket_edges": self.gap_bucket_edges,
+                    "gap_bucket_count": len(self.gap_bucket_edges) + 1,
+                    "total_states": self.stall_bucket_count * (len(self.gap_bucket_edges) + 1),
+                },
                 "q_table": {str(k): v for k, v in self.table.items()}}
 
 

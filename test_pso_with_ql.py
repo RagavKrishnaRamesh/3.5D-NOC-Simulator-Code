@@ -15,6 +15,19 @@ ROOT = Path(__file__).resolve().parent
 
 
 class HybridTests(unittest.TestCase):
+    def test_state_bucketing(self):
+        learner = hybrid.QLearningController()
+        self.assertEqual(learner.state(1.005, 1.0, 9), (0, 0))
+        self.assertEqual(learner.state(1.02, 1.0, 10), (1, 2))
+        self.assertEqual(learner.state(2.0, 1.0, 100), (9, 11))
+        self.assertEqual(learner.state(5.0, 1.0, 1000), (9, 11))
+        gaps = (0.0,) + learner.gap_bucket_edges
+        states = {learner.state(gap, 0.0, stall)
+                  for gap in (g * 1e-12 for g in gaps)
+                  for stall in range(0, 100, 10)}
+        self.assertEqual(len(states), 120)
+        self.assertEqual(learner.metadata()['state_bucketing']['total_states'], 120)
+
     def test_bellman_update(self):
         learner = hybrid.QLearningController()
         state = learner.observe(1.0, 0.5, 0)
