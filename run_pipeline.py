@@ -13,6 +13,8 @@ from ga_3pt5d import particle_output_path as ga_particle_output_path
 from ga_3pt5d import run_ga_3p5d
 from pso_3p5d import particle_output_path as pso_particle_output_path
 from pso_3p5d import run_pso_3p5d
+from pso_dp_ql_3p5d import particle_output_path as pso_dp_ql_particle_output_path
+from pso_dp_ql_3p5d import run_pso_3p5d as run_pso_dp_ql_3p5d
 from q_learning_35d import particle_output_path as ql_particle_output_path
 from q_learning_35d import run_q_learning_35d
 from run_simulator import run_simulation
@@ -38,10 +40,14 @@ def _normalize_algorithm(value):
         "Q-LEARNING": "QL",
         "Q_LEARNING_35D": "QL",
         "Q-LEARNING-35D": "QL",
+        "PSO_DP_QL_3P5D": "PSO_DP_QL",
+        "PSO-DP-QL-3P5D": "PSO_DP_QL",
+        "PSO_DP_QL": "PSO_DP_QL",
+        "PSO-DP-QL": "PSO_DP_QL",
     }
     algorithm = aliases.get(algorithm, algorithm)
-    if algorithm not in {"GA", "PSO", "SA", "ASA", "QL"}:
-        raise ValueError("algorithm must be GA, PSO, SA, ASA, or QL")
+    if algorithm not in {"GA", "PSO", "SA", "ASA", "QL", "PSO_DP_QL"}:
+        raise ValueError("algorithm must be GA, PSO, SA, ASA, QL, or PSO_DP_QL")
     return algorithm
 
 
@@ -118,6 +124,7 @@ def _run_optimizer(algorithm, graph_name, args, mode):
     runners = {
         "GA": (run_ga_3p5d, ga_particle_output_path),
         "PSO": (run_pso_3p5d, pso_particle_output_path),
+        "PSO_DP_QL": (run_pso_dp_ql_3p5d, pso_dp_ql_particle_output_path),
         "SA": (run_sa_3p5d, sa_particle_output_path),
         "ASA": (run_asa_3p5d, asa_particle_output_path),
         "QL": (run_q_learning_35d, ql_particle_output_path),
@@ -261,7 +268,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Run optimizer, generate YAML/traffic table, simulate, and log results."
     )
-    parser.add_argument("--algorithm", required=True, help="GA, PSO, SA, ASA, or QL")
+    parser.add_argument("--algorithm", required=True, help="GA, PSO, PSO_DP_QL, SA, ASA, or QL")
     parser.add_argument("--graph", required=True, help="Graph number x or graph path")
     parser.add_argument("--chiprows", type=int, required=True)
     parser.add_argument("--chipcols", type=int, required=True)
