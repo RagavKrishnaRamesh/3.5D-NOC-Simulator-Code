@@ -39,6 +39,9 @@ def main():
         id_space=args.id_space,
         directed=args.directed,
         use_wsl=args.use_wsl,
+        buffer_depth=args.buffer_depth,
+        packet_size=args.packet_size,
+        stats_warm_up_time=args.stats_warm_up_time,
     )
     simulation_time = legacy.time.perf_counter() - sim_start
     metrics = legacy._parse_simulation_metrics(sim_result["log"])

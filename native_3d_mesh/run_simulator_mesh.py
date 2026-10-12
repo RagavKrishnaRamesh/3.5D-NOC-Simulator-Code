@@ -15,6 +15,35 @@ if str(REPO_ROOT) not in sys.path:
 import run_simulator as legacy
 
 
+def _patch_yaml_scalars(yaml_path, replacements):
+    replacements = {
+        key: value
+        for key, value in replacements.items()
+        if value is not None
+    }
+    if not replacements:
+        return
+
+    lines = yaml_path.read_text(encoding="utf-8").splitlines()
+    seen = set()
+    patched = []
+    for line in lines:
+        stripped = line.lstrip()
+        indent = line[:len(line) - len(stripped)]
+        key = stripped.split(":", 1)[0] if ":" in stripped else None
+        if key in replacements and not stripped.startswith("#"):
+            patched.append(f"{indent}{key}: {replacements[key]}")
+            seen.add(key)
+        else:
+            patched.append(line)
+
+    for key, value in replacements.items():
+        if key not in seen:
+            patched.append(f"{key}: {value}")
+
+    yaml_path.write_text("\n".join(patched) + "\n", encoding="utf-8")
+
+
 def run_simulation(
     particle,
     graph,
@@ -27,6 +56,9 @@ def run_simulation(
     id_space="global",
     directed=False,
     use_wsl=False,
+    buffer_depth=None,
+    packet_size=None,
+    stats_warm_up_time=None,
 ):
     particle_path = legacy._resolve_particle_path(particle, REPO_ROOT)
     graph_path = legacy._resolve_graph_path(graph, REPO_ROOT)
@@ -95,6 +127,16 @@ def run_simulation(
             legacy._rel_to_repo(yaml_path, REPO_ROOT),
         ],
         REPO_ROOT,
+    )
+
+    _patch_yaml_scalars(
+        yaml_path,
+        {
+            "buffer_depth": buffer_depth,
+            "min_packet_size": packet_size,
+            "max_packet_size": packet_size,
+            "stats_warm_up_time": stats_warm_up_time,
+        },
     )
 
     sim_cmd = [
@@ -174,6 +216,9 @@ def parse_args():
     parser.add_argument("--id-space", choices=("global", "particle"), default="global")
     parser.add_argument("--directed", action="store_true")
     parser.add_argument("--use-wsl", action="store_true")
+    parser.add_argument("--buffer-depth", type=int, default=None)
+    parser.add_argument("--packet-size", type=int, default=None)
+    parser.add_argument("--stats-warm-up-time", type=int, default=None)
     return parser.parse_args()
 
 
@@ -191,6 +236,9 @@ def main():
         id_space=args.id_space,
         directed=args.directed,
         use_wsl=args.use_wsl,
+        buffer_depth=args.buffer_depth,
+        packet_size=args.packet_size,
+        stats_warm_up_time=args.stats_warm_up_time,
     )
     print(f"YAML: {result['yaml']}")
     print(f"Traffic Table: {result['traffic_table']}")

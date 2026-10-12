@@ -295,6 +295,9 @@ def parse_args():
     parser.add_argument("--id-space", choices=("global", "particle"), default="global")
     parser.add_argument("--directed", action="store_true")
     parser.add_argument("--use-wsl", action="store_true")
+    parser.add_argument("--buffer-depth", type=int, default=None)
+    parser.add_argument("--packet-size", type=int, default=None)
+    parser.add_argument("--stats-warm-up-time", type=int, default=None)
     return parser.parse_args()
 
 
