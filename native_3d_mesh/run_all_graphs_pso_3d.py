@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run native 3D mesh PSO for every graph with 2-layer and 4-layer meshes."""
+"""Run native 3D mesh PSO for every graph with selected 2-layer or 4-layer meshes."""
 
 import argparse
 from datetime import datetime, timedelta
@@ -17,9 +17,9 @@ from native_3d_mesh import run_all_mesh_graphs as runner
 runner.ALGORITHMS = ["PSO"]
 runner.SEED = 10
 runner.SIM_SEED = 10
-SIM_BUFFER_DEPTH = 1024
-SIM_PACKET_SIZE = 64
-SIM_STATS_WARM_UP_TIME = 1000
+SIM_BUFFER_DEPTH = 8
+SIM_PACKET_SIZE = 8
+SIM_STATS_WARM_UP_TIME = 2000
 
 
 def _dims(chiprows, chipcols, threedheight):
@@ -156,10 +156,16 @@ def _validate_results_start_time(parser, value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--layers",
+        choices=("2", "4", "both"),
+        default="both",
+        help="Mesh layers to run: 2, 4, or both (default: both).",
+    )
+    parser.add_argument(
         "--results-start-time",
         help=(
-            "Timestamp for the 2-layer CSV (YYYYMMDD_HHMMSS). "
-            "The 4-layer CSV uses the next second."
+            "Timestamp for the first selected CSV (YYYYMMDD_HHMMSS). "
+            "When running both layers, the 4-layer CSV uses the next second."
         ),
     )
     args = parser.parse_args()
@@ -168,20 +174,22 @@ def main():
         two_layer_time = _validate_results_start_time(parser, args.results_start_time)
     else:
         two_layer_time = datetime.now()
-    four_layer_time = two_layer_time + timedelta(seconds=1)
+    four_layer_time = two_layer_time + timedelta(seconds=args.layers == "both")
 
     with runner.batch_lock():
         failures = []
-        failures.extend(run_layer_batch(
-            "2-layer",
-            dims_for_core_count_2_layer,
-            two_layer_time.strftime("%Y%m%d_%H%M%S"),
-        ))
-        failures.extend(run_layer_batch(
-            "4-layer",
-            dims_for_core_count_4_layer,
-            four_layer_time.strftime("%Y%m%d_%H%M%S"),
-        ))
+        if args.layers in {"2", "both"}:
+            failures.extend(run_layer_batch(
+                "2-layer",
+                dims_for_core_count_2_layer,
+                two_layer_time.strftime("%Y%m%d_%H%M%S"),
+            ))
+        if args.layers in {"4", "both"}:
+            failures.extend(run_layer_batch(
+                "4-layer",
+                dims_for_core_count_4_layer,
+                four_layer_time.strftime("%Y%m%d_%H%M%S"),
+            ))
 
     if failures:
         raise SystemExit(1)
