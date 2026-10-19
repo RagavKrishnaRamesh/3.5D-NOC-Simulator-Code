@@ -13,6 +13,10 @@ from ga_3pt5d import particle_output_path as ga_particle_output_path
 from ga_3pt5d import run_ga_3p5d
 from pso_3p5d import particle_output_path as pso_particle_output_path
 from pso_3p5d import run_pso_3p5d
+from pso_with_only_dp import particle_output_path as pso_dp_particle_output_path
+from pso_with_only_dp import run_pso_3p5d as run_pso_dp_3p5d
+from pso_with_only_ql import particle_output_path as pso_ql_particle_output_path
+from pso_with_only_ql import run_pso_3p5d as run_pso_ql_3p5d
 from pso_dp_ql_3p5d import particle_output_path as pso_dp_ql_particle_output_path
 from pso_dp_ql_3p5d import run_pso_3p5d as run_pso_dp_ql_3p5d
 from q_learning_35d import particle_output_path as ql_particle_output_path
@@ -44,10 +48,18 @@ def _normalize_algorithm(value):
         "PSO-DP-QL-3P5D": "PSO_DP_QL",
         "PSO_DP_QL": "PSO_DP_QL",
         "PSO-DP-QL": "PSO_DP_QL",
+        "PSO+DP": "PSO_DP",
+        "PSO-DP": "PSO_DP",
+        "PSO_DP_3P5D": "PSO_DP",
+        "PSO_WITH_ONLY_DP": "PSO_DP",
+        "PSO+QL": "PSO_QL",
+        "PSO-QL": "PSO_QL",
+        "PSO_QL_3P5D": "PSO_QL",
+        "PSO_WITH_ONLY_QL": "PSO_QL",
     }
     algorithm = aliases.get(algorithm, algorithm)
-    if algorithm not in {"GA", "PSO", "SA", "ASA", "QL", "PSO_DP_QL"}:
-        raise ValueError("algorithm must be GA, PSO, SA, ASA, QL, or PSO_DP_QL")
+    if algorithm not in {"GA", "PSO", "SA", "ASA", "QL", "PSO_DP", "PSO_QL", "PSO_DP_QL"}:
+        raise ValueError("algorithm must be GA, PSO, PSO_DP, PSO_QL, PSO_DP_QL, SA, ASA, or QL")
     return algorithm
 
 
@@ -124,6 +136,8 @@ def _run_optimizer(algorithm, graph_name, args, mode):
     runners = {
         "GA": (run_ga_3p5d, ga_particle_output_path),
         "PSO": (run_pso_3p5d, pso_particle_output_path),
+        "PSO_DP": (run_pso_dp_3p5d, pso_dp_particle_output_path),
+        "PSO_QL": (run_pso_ql_3p5d, pso_ql_particle_output_path),
         "PSO_DP_QL": (run_pso_dp_ql_3p5d, pso_dp_ql_particle_output_path),
         "SA": (run_sa_3p5d, sa_particle_output_path),
         "ASA": (run_asa_3p5d, asa_particle_output_path),
@@ -136,6 +150,11 @@ def _run_optimizer(algorithm, graph_name, args, mode):
         "tsv_assignment_mode": mode,
         "seed": args.seed,
     }
+    if algorithm in {"PSO_DP", "PSO_QL", "PSO_DP_QL"}:
+        runner_kwargs["parallel_workers"] = getattr(args, "parallel_workers", None)
+    if algorithm == "PSO_QL":
+        runner_kwargs.update({name: getattr(args, name) for name in
+                              ("q_alpha", "q_gamma", "q_epsilon", "max_swaps")})
 
     runner(
         graph_name,
@@ -268,7 +287,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Run optimizer, generate YAML/traffic table, simulate, and log results."
     )
-    parser.add_argument("--algorithm", required=True, help="GA, PSO, PSO_DP_QL, SA, ASA, or QL")
+    parser.add_argument("--algorithm", required=True, help="GA, PSO, PSO_DP, PSO_QL, PSO_DP_QL, SA, ASA, or QL")
     parser.add_argument("--graph", required=True, help="Graph number x or graph path")
     parser.add_argument("--chiprows", type=int, required=True)
     parser.add_argument("--chipcols", type=int, required=True)
@@ -279,6 +298,11 @@ def parse_args():
     parser.add_argument("--population", type=int, required=True)
     parser.add_argument("--iterations", type=int, required=True)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--parallel-workers", type=int, default=None, help="PSO_DP/PSO_QL fitness worker threads")
+    parser.add_argument("--q-alpha", type=float, default=0.15, help="PSO_QL learning rate")
+    parser.add_argument("--q-gamma", type=float, default=0.90, help="PSO_QL discount factor")
+    parser.add_argument("--q-epsilon", type=float, default=0.10, help="PSO_QL exploration probability")
+    parser.add_argument("--max-swaps", type=int, default=8, help="PSO_QL maximum swaps per action")
     parser.add_argument(
         "--mode",
         default="random",

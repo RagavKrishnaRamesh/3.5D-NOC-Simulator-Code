@@ -2,7 +2,7 @@
 
 This repo runs a full NoC optimization and simulation flow:
 
-1. Run an optimizer: `GA`, `PSO`, `SA`, `ASA`, or `QL`
+1. Run an optimizer: `GA`, `PSO`, `PSO_DP`, `PSO_QL`, `PSO_DP_QL`, `SA`, `ASA`, or `QL`
 2. Write the best particle to `Particles/`
 3. Generate YAML topology in `YAML/`
 4. Generate traffic table in `TrafficTable/`
@@ -33,7 +33,7 @@ python run_pipeline.py --algorithm GA --graph 4 --chiprows 2 --chipcols 2 --two5
 General form:
 
 ```powershell
-python run_pipeline.py --algorithm <GA|PSO|SA|ASA|QL> --graph <graph_number_or_path> --chiprows <rows> --chipcols <cols> --two5dwidth <width> --threedheight <height> --num2p5d <count> --num3d <count> --population <count> --iterations <count> --use-wsl
+python run_pipeline.py --algorithm <GA|PSO|PSO_DP|PSO_QL|PSO_DP_QL|SA|ASA|QL> --graph <graph_number_or_path> --chiprows <rows> --chipcols <cols> --two5dwidth <width> --threedheight <height> --num2p5d <count> --num3d <count> --population <count> --iterations <count> --use-wsl
 ```
 
 You can also use the dotted aliases:
@@ -168,8 +168,8 @@ LOG/GA_Particle4.log
 RESULTS_<mode>_<algorithm>_<YYYYMMDD_HHMMSS>.csv
 ```
 
-`<mode>` is `random` or `elevator`; `<algorithm>` is `ga`, `pso`, `sa`, `asa`,
-or `ql`. Each algorithm has its own CSV.
+`<mode>` is `random` or `elevator`; `<algorithm>` is `ga`, `pso`, `pso_dp`,
+`pso_ql`, `pso_dp_ql`, `sa`, `asa`, or `ql`. Each algorithm has its own CSV.
 
 The CSV includes optimizer metrics and simulator metrics, including:
 
@@ -225,3 +225,100 @@ Use help for the latest CLI options:
 python run_pipeline.py --help
 python run_simulator.py --help
 ```
+
+## Threaded PSO variants
+
+`PSO_DP` and `PSO_QL` use `ThreadPoolExecutor` for particle fitness evaluation.
+They default to `min(cpu_count, population, 4)` workers. Set
+`--parallel-workers 4` explicitly, or set the `PSO_WORKERS` environment variable.
+One worker runs sequentially. Particle movement, repair, random draws, best-state
+updates, fitness-cache writes and Q-table updates stay on the coordinator thread.
+Particle-dependent routing state is isolated per evaluating thread; topology is
+fixed for the duration of a run. Run one optimization at a time per module.
+CPython's GIL can limit CPU speedup even when several worker threads are used.
+
+| Algorithm | Implementation | DP / memoization | Q-learning |
+|---|---|---|---|
+| `PSO_DP` | `pso_with_only_dp.py` | Fitness-state, hop-distance and TSV-path reuse | None |
+| `PSO_QL` | `pso_with_only_ql.py` | None; every particle is evaluated | Particle-hash states; concrete swap-sequence actions |
+
+Here DP refers to the existing memoization of repeated fitness and path
+subproblems. It does not replace the PSO search with an exact placement solver.
+The pre-existing `PSO_DP_QL` remains available as a separate legacy combination.
+
+Run either optimizer directly, without invoking Noxim:
+
+```powershell
+python pso_with_only_dp.py Graph3 2 2 1 2 0 1 100 100 0 --seed 10 --parallel-workers 4
+python pso_with_only_ql.py Graph3 2 2 1 2 0 1 100 100 0 --seed 10 --parallel-workers 4
+```
+
+The positional arguments are `graph rows cols two5d_width threeD_height
+num_2p5d num_3d iterations population tsv_mode`. TSV mode `0` is Elevator-First
+assignment; `1` is REDELF random assignment. This TSV setting is distinct from
+Noxim's YAML `routing_algorithm`.
+
+Outputs are separate:
+
+```text
+Particles/PSO_DP_Particle3.txt
+Particles/PSO_QL_Particle3.txt
+Particles/PSO_QL_Particle3.qtable.json
+```
+
+PSO+QL first makes the regular inertia/cognitive/social PSO move and evaluates
+it. Q-learning then selects an additional ordered sequence of swaps. Each swap
+is `(target, chip_index, i, j)`: `("mapping", -1, i, j)` swaps positions in the
+flattened core mapping; `("tsv", chip_index, i, j)` swaps TSV placement bits.
+Actions contain up to `--max-swaps` swaps, default 8. The empty sequence keeps
+the PSO proposal unchanged. Candidate sequences come from personal/global best
+differences, the previous velocity and random swaps; previously learned
+sequences are also available when the same state is revisited. Q-table action
+keys are the actual sequences, rather than names of these proposal strategies.
+
+The state is a stable SHA-256 hash of the complete repaired chromosome:
+mapping, TSV placement, TSV assignment and attachment points. A nonempty action
+is followed by the existing validity repair. Reward is the decrease in effective
+fitness caused by the Q move, measured after repair. The PSO move's improvement
+is evaluated separately and is not credited to the Q action. Updates use:
+
+```text
+Q(s,a) += alpha * (reward + gamma * max Q(s',a') - Q(s,a))
+```
+
+Defaults are `--q-alpha 0.15 --q-gamma 0.90 --q-epsilon 0.10`.
+The saved Q-table records each state hash, swap sequence and learned value for
+inspection. Learning starts with a fresh table per run. Hashing and the Q table
+are policy memory; PSO+QL has no fitness or path memoization.
+
+To include topology generation and simulation, either pipeline accepts
+`--algorithm PSO_DP` or `--algorithm PSO_QL`, including aliases `PSO+DP` and
+`PSO+QL`. The names `PSO_WITH_ONLY_DP` and `PSO_WITH_ONLY_QL` also work.
+For a pure native 3D stack on Windows:
+
+```powershell
+python native_3d_mesh/run_pipeline_mesh.py --algorithm PSO_QL --graph 3 --chiprows 2 --chipcols 2 --two5dwidth 1 --threedheight 2 --num2p5d 0 --num3d 1 --population 100 --iterations 100 --seed 10 --parallel-workers 4 --mode elevator --use-wsl
+```
+
+The new batch entry points are
+`native_3d_mesh/run_all_graphs_pso_with_only_dp.py` and
+`native_3d_mesh/run_all_graphs_pso_with_only_ql.py`. They use the settings and topology
+sizes in `run_all_mesh_graphs.py`; set `USE_WSL = True` there on Windows or run
+the scripts inside WSL. Use `PSO_WORKERS` to select their thread count.
+
+```powershell
+python native_3d_mesh/run_all_graphs_pso_with_only_dp.py
+python native_3d_mesh/run_all_graphs_pso_with_only_ql.py
+```
+
+The previous optimizer and batch filenames remain as compatibility entry points.
+
+Validation:
+
+```powershell
+python -m unittest discover -s tests -p test_pso_variants.py -v
+```
+
+Tests cover forced overlap between evaluations, cached versus uncached fitness,
+exact swap ordering, complete-particle hashes, Bellman updates, and matching
+seeded results with one versus four workers in both TSV assignment modes.

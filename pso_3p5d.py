@@ -20,6 +20,7 @@ import math
 import os
 import random
 import re
+import threading
 import time
 
 try:
@@ -64,6 +65,17 @@ base_icrt = {}
 INF = float("inf")
 tsv_assignment_global = {}
 current_particle_state = None
+_evaluation_context = threading.local()
+
+
+def _evaluation_particle():
+    return getattr(_evaluation_context, "particle", current_particle_state)
+
+
+def _evaluation_tsv_assignment():
+    return getattr(_evaluation_context, "tsv_assignment", tsv_assignment_global)
+
+
 TSV_ASSIGNMENT_ELEVATOR_FIRST = 0
 TSV_ASSIGNMENT_REDELF_RANDOM = 1
 TSV_ASSIGNMENT_REDELF = TSV_ASSIGNMENT_REDELF_RANDOM
@@ -398,7 +410,7 @@ def _3d_chiplet_params(router_id):
 
 
 def _resolve_assigned_tsv_router(current_router, start_id, end_id, routers_per_level):
-    tsv_r = tsv_assignment_global.get(current_router)
+    tsv_r = _evaluation_tsv_assignment().get(current_router)
     if tsv_r is None or not (start_id <= tsv_r <= end_id):
         return None
 
@@ -413,7 +425,7 @@ def _resolve_assigned_tsv_router(current_router, start_id, end_id, routers_per_l
     if meta is None:
         return None
     chip_idx = int(meta["chiplet"].split("_")[1])
-    tsv_placement = current_particle_state[chip_idx][1]
+    tsv_placement = _evaluation_particle()[chip_idx][1]
     if local_idx >= len(tsv_placement) or tsv_placement[local_idx] != 1:
         return None
 
@@ -476,7 +488,7 @@ def _3d_to_base_cost(router_id, info):
     _, _, sz = _local_coords_3d(router_id, start_id, levels)
 
     chip_idx = int(info["chiplet"].split("_")[1])
-    base_attach_router = int(current_particle_state[chip_idx][3])
+    base_attach_router = int(_evaluation_particle()[chip_idx][3])
     ax = int(base_attach_router % CHIP_COLS)
     ay = int(base_attach_router // CHIP_COLS)
 
@@ -500,7 +512,7 @@ def _base_to_3d_cost(router_id, info):
     dx, dy, dz = _local_coords_3d(router_id, start_id, levels)
 
     chip_idx = int(info["chiplet"].split("_")[1])
-    base_attach_router = int(current_particle_state[chip_idx][3])
+    base_attach_router = int(_evaluation_particle()[chip_idx][3])
     ax = int(base_attach_router % CHIP_COLS)
     ay = int(base_attach_router // CHIP_COLS)
     attach_router = start_id + ay * CHIP_COLS + ax
@@ -526,7 +538,7 @@ def _2p5d_to_base_cost(info):
 
     chip_idx = int(info["chiplet"].split("_")[0][1:])
     state_idx = NUM_3D_CHIPLETS + chip_idx
-    base_attach_router = int(current_particle_state[state_idx][1])
+    base_attach_router = int(_evaluation_particle()[state_idx][1])
 
     interposer = base_icrt[info["local_interposer_to_global_vl"]]["interposer"]
     rows = interposer["rows"]
@@ -1274,10 +1286,10 @@ def tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_s
 
 
 def cost_function_3p5d(particle_state, chiplet_layout, edge_set_file):
-    global tsv_assignment_global, current_particle_state
-
-    current_particle_state = particle_state
-    tsv_assignment_global = build_global_tsv_assignment(particle_state, chiplet_layout)
+    # Topology is read-only during a batch; particle-dependent routing data
+    # must belong to the evaluating thread.
+    _evaluation_context.particle = particle_state
+    _evaluation_context.tsv_assignment = build_global_tsv_assignment(particle_state, chiplet_layout)
     core_to_router_map = build_core_to_router_map(particle_state, chiplet_layout)
 
     comm_cost = 0.0
@@ -1548,7 +1560,8 @@ def update_attach_router(particle_state, chiplet_layout, local_best, global_best
 
 
 class Particle3p5d:
-    def __init__(self, chiplet_layout, router_coordinates, edge_set_file, tsv_list):
+    def __init__(self, chiplet_layout, router_coordinates, edge_set_file, tsv_list,
+                 evaluate_initial=True):
         self.state = generate_particle_state_3p5d(chiplet_layout, tsv_list)
         self.state = repair_particle_state(
             self.state,
@@ -1566,7 +1579,8 @@ class Particle3p5d:
         self.var_up = 0.0
         self.var_down = 0.0
 
-        self.evaluate(chiplet_layout, router_coordinates, edge_set_file)
+        if evaluate_initial:
+            self.evaluate(chiplet_layout, router_coordinates, edge_set_file)
 
     def evaluate(self, chiplet_layout, router_coordinates, edge_set_file):
         fit, cost, variance, var_up, var_down = evaluate_particle_state(
@@ -1735,7 +1749,8 @@ def write_particle_file(path,
                         final_eff_fit,
                         final_var,
                         final_var_up,
-                        final_var_down):
+                        final_var_down,
+                        optimizer_metadata=None):
     out_dir = os.path.dirname(path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -1788,6 +1803,10 @@ def write_particle_file(path,
         },
         "chiplets": [],
     }
+
+    if optimizer_metadata is not None:
+        data["algorithm"] = optimizer_metadata["algorithm"]
+        data["optimizer"] = optimizer_metadata
 
     if BASE_INTERPOSER_ENABLED and BASE_ROWS > 0 and BASE_COLS > 0:
         data["base"] = {"rows": BASE_ROWS, "cols": BASE_COLS}

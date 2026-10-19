@@ -29,3 +29,9 @@ To generate only the YAML for an existing particle:
 ```powershell
 python native_3d_mesh/generate_yaml_mesh.py Particles/GA_Particle4.txt native_3d_mesh/YAML/GA_Particle4.yaml
 ```
+
+The pipeline also accepts `--algorithm PSO_DP` and `--algorithm PSO_QL` with
+`--parallel-workers N`. Their particle, YAML, log and CSV names use separate
+`PSO_DP` / `PSO_QL` prefixes. PSO+DP memoizes fitness/path subproblems; PSO+QL
+uses complete-particle hashes and concrete ordered swap sequences without DP.
+See the root README's threaded PSO section for commands and Q-learning settings.
