@@ -17,6 +17,8 @@ def _layer_local_id(plane_lid, layer_z, plane_size):
 
 def _build_intra_tsv_selection(levels, plane_size, tsv_assignment,
                                tsv_candidates, dim_x, dim_y):
+    if int(levels) < 2:
+        return [], []
     placement = []
     selection = []
 
@@ -234,8 +236,8 @@ def _build_mesh_graph_native_3d(data):
                 order.append(child_name)
                 ax, ay = spec["attach_coord"]
                 inter_router = legacy._router_id_from_coord(ax, ay, inter_cols)
-                local_x = int(ax) % chip_cols
-                local_y = int(ay) % chip_rows
+                local_x = chip_cols - 1
+                local_y = chip_rows - 1
                 chip_router = local_y * chip_cols + local_x
                 edges.append({
                     "parent": name,

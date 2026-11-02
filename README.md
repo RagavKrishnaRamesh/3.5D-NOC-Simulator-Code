@@ -313,6 +313,52 @@ python native_3d_mesh/run_all_graphs_pso_with_only_ql.py
 
 The previous optimizer and batch filenames remain as compatibility entry points.
 
+Each requested PSO variant has its own native-mesh batch entry point, using the
+existing dimensions, TSV modes, seeds, simulation and CSV framework:
+
+| Optimizer | Batch script |
+|---|---|
+| Base PSO, `pso_3p5d.py` | `native_3d_mesh/run_all_graphs_pso_3p5d.py` |
+| PSO + DP, `pso_with_only_dp.py` (alias `pso_dp_3p5d.py`) | `native_3d_mesh/run_all_graphs_pso_dp_3p5d.py` |
+| PSO + QL, `pso_with_only_ql.py` (alias `pso_ql_3p5d.py`) | `native_3d_mesh/run_all_graphs_pso_ql_3p5d.py` |
+
+DP's routing state is `(current_router, target_layer, latched)`, under a fixed
+particle's TSV assignment. `latched=True` represents descent toward an external
+destination: the selected elevator remains fixed during that planar segment.
+For intra-stack routing, the native simulator reads the assignment again at each
+XY hop. The recurrence adds that segment's latency to the successor state's
+remaining latency; its terminal value is zero on the target layer. The cached
+value also contains the arrival router and directed TSV crossings. Cache entries
+are scoped to one particle evaluation. Whole-fitness memoization separately keys
+the full repaired chromosome plus graph, geometry and objective context. DP
+evaluates the prescribed routing policy exactly; PSO still searches placements.
+It does not guarantee the globally optimal mapping.
+
+QL's state remains the SHA-256 hash of the complete repaired chromosome.
+Actions remain concrete ordered mapping/TSV swap sequences, including no-op.
+The action space contains all legal indexed sequences of length 1 through
+`max_swaps`, plus no-op. PSO-guided proposals and full-support random proposals
+sample this fixed space. Only the Q edit and repair determine each learned
+transition and reward; PSO supplies additional starting particles for this
+off-policy learning. The iteration limit truncates sampling of a continuing
+particle-edit process, so the final sampled transition still bootstraps. A true
+terminal transition, if explicitly supplied to `q_update_value`, bootstraps zero.
+The fixed learning rate and finite run budget provide no convergence guarantee;
+complete-particle hashes also limit generalization across different particles.
+See [Watkins and Dayan's Q-learning paper](https://www.gatsby.ucl.ac.uk/~dayan/papers/cjch.pdf)
+for the update and convergence assumptions, and
+[the DP formulation](https://hankyang.seas.harvard.edu/OptimalControlEstimation/formulation.html)
+for additive state recurrences.
+
+Upward and downward load variances are population variances over all installed
+directed TSV links, including unused links at every layer interface. Each graph
+edge contributes its bandwidth once to every crossing on its actual route.
+Destination-side ascent starts at that stack's bottom attachment. Overall
+variance is `max(variance_up, variance_down)`. The objective retains its 50/50
+cost/variance weights; the communication-cost normalizer now uses total bandwidth
+and a conservative whole-route bound, including both endpoint legs. Corrected
+normalized fitness values should not be compared directly with old CSV values.
+
 Validation:
 
 ```powershell

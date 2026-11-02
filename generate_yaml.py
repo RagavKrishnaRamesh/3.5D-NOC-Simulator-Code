@@ -716,8 +716,8 @@ def _build_mesh_graph(data):
                 order.append(child_name)
                 ax, ay = spec["attach_coord"]
                 inter_router = _router_id_from_coord(ax, ay, inter_cols)
-                local_x = int(ax) % chip_cols
-                local_y = int(ay) % chip_rows
+                local_x = chip_cols - 1
+                local_y = chip_rows - 1
                 chip_router = local_y * chip_cols + local_x
                 edges.append({
                     "parent": name,

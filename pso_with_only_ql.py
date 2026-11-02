@@ -58,6 +58,8 @@ def apply_swap_action(state, action, chiplet_layout):
 
 def build_swap_actions(particle, personal_best, global_best, chiplet_layout,
                        max_swaps=8, rng=None):
+    if max_swaps < 1:
+        raise ValueError("max_swaps must be positive")
     rng = rng or pso.random
     mapping = pso.flatten_particle_mapping(particle.state)
     actions = [()]  # A valid no-op gives the learner the option to keep the PSO proposal.
@@ -87,7 +89,28 @@ def build_swap_actions(particle, personal_best, global_best, chiplet_layout,
         zeros = [i for i, value in enumerate(placement) if value == 0]
         if ones and zeros:
             actions.append((("tsv", chip, rng.choice(ones), rng.choice(zeros)),))
+    # Sample all legal sequence lengths and targets with positive probability.
+    # PSO-guided proposals are a behavior policy, not a changing action space.
+    targets = [("mapping", -1, len(mapping))]
+    targets.extend(("tsv", i, len(particle.state[i][1])) for i, chip in enumerate(chiplet_layout)
+                   if chip["type"] == "3d")
+    targets = [target for target in targets if target[2] > 1]
+    if targets:
+        sequence = []
+        for _ in range(rng.randint(1, max_swaps)):
+            target, chip, size = rng.choice(targets)
+            i, j = rng.sample(range(size), 2)
+            sequence.append((target, chip, i, j))
+        actions.append(tuple(sequence))
     return list(dict.fromkeys(actions))
+
+
+def q_action_count(particle_state, max_swaps):
+    """Finite action space: no-op plus every indexed sequence up to the limit."""
+    n = len(pso.flatten_particle_mapping(particle_state))
+    primitives = n * (n - 1)
+    primitives += sum(len(chip[1]) * (len(chip[1]) - 1) for chip in particle_state if len(chip) == 4)
+    return 1 + sum(primitives ** k for k in range(1, max_swaps + 1))
 
 
 def q_choose_action(q_table, state_key, actions, epsilon=Q_LEARNING_EPSILON, rng=None):
@@ -102,9 +125,15 @@ def q_choose_action(q_table, state_key, actions, epsilon=Q_LEARNING_EPSILON, rng
 
 
 def q_update_value(q_table, state_key, action, reward, next_state_key,
-                   alpha=Q_LEARNING_ALPHA, gamma=Q_LEARNING_GAMMA, terminal=False):
-    # The no-op is always feasible and untried actions start at zero.
-    best_next = 0.0 if terminal else max([0.0, *q_table.get(next_state_key, {}).values()])
+                   alpha=Q_LEARNING_ALPHA, gamma=Q_LEARNING_GAMMA, terminal=False,
+                   next_action_count=None):
+    next_row = q_table.get(next_state_key, {})
+    values = list(next_row.values())
+    # Include zero only for a genuinely untried action. Learned negative
+    # values must not be clamped to zero once all feasible actions are known.
+    if next_action_count is None or len(next_row) < next_action_count:
+        values.append(0.0)
+    best_next = 0.0 if terminal else max(values, default=0.0)
     row = q_table.setdefault(state_key, {})
     old = row.get(action, 0.0)
     row[action] = old + alpha * (reward + gamma * best_next - old)
@@ -214,7 +243,8 @@ def run_pso_3p5d(graph_name, chip_rows, chip_cols, two5d_width, threeD_height,
             for particle, (state, action, old_fitness) in zip(particles, transitions):
                 reward = old_fitness - particle.fitness_value
                 q_update_value(q_table, state, action, reward, q_state_key(particle.state),
-                               q_alpha, q_gamma, terminal=iteration + 1 == iterations)
+                               q_alpha, q_gamma,
+                               next_action_count=q_action_count(particle.state, max_swaps))
                 updates += 1
                 total_reward += reward
             global_best = _update_bests(particles, personal_best, global_best)
@@ -235,7 +265,9 @@ def run_pso_3p5d(graph_name, chip_rows, chip_cols, two5d_width, threeD_height,
                 "q_action": "ordered_swap_sequence", "q_alpha": q_alpha, "q_gamma": q_gamma,
                 "q_epsilon": q_epsilon, "max_swaps": max_swaps, "q_updates": updates,
                 "q_states": len(q_table), "q_total_reward": total_reward,
-                "iterations_completed": completed, "q_table_file": q_output}
+                "iterations_completed": completed, "q_table_file": q_output,
+                "q_environment": "continuing_particle_edit_mdp",
+                "iteration_limit_is_truncation": True}
     pso.write_particle_file(output, graph_name, chip_rows, chip_cols, two5d_width, threeD_height,
                             num_2p5d_units, num_3d_units, global_best.state, layout, global_best.cost,
                             global_best.fitness_value, global_best.variance, global_best.var_up, global_best.var_down,

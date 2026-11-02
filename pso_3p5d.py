@@ -29,6 +29,24 @@ except ImportError:
     create_edge_set = None
 
 
+class _EdgeSetInput(str):
+    """One optimizer run's immutable edge-file contents, alongside its path."""
+
+    def __new__(cls, path):
+        value = super().__new__(cls, path)
+        with open(path, "r", encoding="utf-8") as handle:
+            value.lines = tuple(handle)
+        return value
+
+
+def _edge_set_lines(path):
+    if isinstance(path, _EdgeSetInput):
+        return path.lines
+    # Standalone fitness callers can still supply an ordinary filename.
+    with open(path, "r", encoding="utf-8") as handle:
+        return tuple(handle)
+
+
 # =========================
 # Tunable PSO / latency parameters
 # =========================
@@ -203,6 +221,13 @@ def build_topology(chip_rows, chip_cols,
     """Build the heterogeneous 3.5D topology and particle-state metadata."""
     global CHIP_ROWS, CHIP_COLS, BASE_ROWS, BASE_COLS, base_icrt
     global NUM_3D_CHIPLETS, BASE_INTERPOSER_ENABLED
+
+    if min(chip_rows, chip_cols, two5d_width, threeD_height) < 1:
+        raise ValueError("Chip dimensions, complex width and stack height must be positive")
+    if min(num_2p5d_units, num_3d_units) < 0:
+        raise ValueError("Chiplet counts must be non-negative")
+    if num_3d_units and threeD_height > 1 and chip_rows + chip_cols < 4:
+        raise ValueError("Footprint cannot fit two non-adjacent TSV columns")
 
     CHIP_ROWS = chip_rows
     CHIP_COLS = chip_cols
@@ -432,37 +457,97 @@ def _resolve_assigned_tsv_router(current_router, start_id, end_id, routers_per_l
     return tsv_r
 
 
-def _walk_3d_to_level(src_router, dest_level, start_id, end_id, levels, routers_per_level):
-    current_router = src_router
-    cost = 0.0
+def _xy_next_router(router, target, start_id, plane):
+    local = (router - start_id) % plane
+    other = (target - start_id) % plane
+    x, y = local % CHIP_COLS, local // CHIP_COLS
+    tx, ty = other % CHIP_COLS, other // CHIP_COLS
+    if x != tx:
+        return router + (1 if tx > x else -1)
+    if y != ty:
+        return router + (CHIP_COLS if ty > y else -CHIP_COLS)
+    return router
 
+
+def _assignment_has_cycle(assignment, start_id, layer_offset, plane):
+    finished = set()
+    for source in range(layer_offset, layer_offset + plane):
+        current, visiting = source, set()
+        while current not in finished:
+            target = assignment[current - start_id]
+            if target == current:
+                break
+            if current in visiting:
+                return True
+            visiting.add(current)
+            current = _xy_next_router(current, target, start_id, plane)
+        finished.update(visiting)
+    return False
+
+
+def _native_vertical_route(start_router, target_level, chip, assignment,
+                           latched=False, cache=None):
+    """Return latency, arrival router and directed TSV crossings.
+
+    Intra-stack forwarding reselects at each XY hop. External descent latches
+    its selected elevator until the next vertical crossing. With fixed routing,
+    suffix DP state is (current_router, target_level, latched); each cached value
+    contains remaining latency, arrival router and remaining TSV crossings.
+    """
+    start_id, end_id = chip["range"]
+    levels = chip["no_levels"]
+    plane = chip["no_routers"] // levels
+    if not start_id <= start_router <= end_id or not 0 <= target_level < levels:
+        raise ValueError("Route endpoint is outside the 3D stack")
+    current, pending, visited = start_router, [], set()
     while True:
-        cx, cy, cz = _local_coords_3d(current_router, start_id, levels)
-        if cz == dest_level:
+        key = (current, target_level, bool(latched))
+        if cache is not None and key in cache:
+            result = cache[key]
             break
+        if current in visited:
+            raise ValueError("TSV assignment contains a native forwarding cycle")
+        visited.add(current)
+        local = current - start_id
+        layer = local // plane
+        if layer == target_level:
+            result = (0.0, current, ())
+            if cache is not None:
+                cache[key] = result
+            break
+        selected = assignment.get(current)
+        if selected is None or not start_id <= selected <= end_id:
+            raise ValueError("Missing or out-of-range TSV assignment")
+        if (selected - start_id) // plane != layer:
+            raise ValueError("Assigned TSV must be on the current layer")
+        if assignment.get(selected) != selected:
+            raise ValueError("A physical TSV router must assign itself")
+        if not latched and selected != current:
+            neighbor = _xy_next_router(current, selected, start_id, plane)
+            pending.append((key, INTRACHIP_LATENCY, ()))
+        else:
+            selected_local = (selected - start_id) % plane
+            x, y = local % plane % CHIP_COLS, local % plane // CHIP_COLS
+            tx, ty = selected_local % CHIP_COLS, selected_local // CHIP_COLS
+            neighbor = selected + (1 if target_level > layer else -1) * plane
+            step_cost = (abs(x - tx) + abs(y - ty)) * INTRACHIP_LATENCY + VL_LATENCY
+            pending.append((key, step_cost, ((selected, neighbor),)))
+        current = neighbor
+    for key, step_cost, pairs in reversed(pending):
+        result = (step_cost + result[0], result[1], pairs + result[2])
+        if cache is not None:
+            cache[key] = result
+    return result
 
-        direction = 1 if dest_level > cz else -1
 
-        tsv_r = _resolve_assigned_tsv_router(
-            current_router, start_id, end_id, routers_per_level
-        )
-        if tsv_r is None:
-            return INF, None
-        tx, ty, tz = _local_coords_3d(tsv_r, start_id, levels)
-        if tz != cz:
-            return INF, None
-
-        cost += (abs(cx - tx) + abs(cy - ty)) * INTRACHIP_LATENCY
-
-        next_z = tz + direction
-        if next_z < 0 or next_z >= levels:
-            return cost, None
-
-        current_router = start_id + next_z * routers_per_level + ty * CHIP_COLS + tx
-        cost += VL_LATENCY
-
-    return cost, current_router
-
+def _walk_3d_to_level(src_router, dest_level, start_id, end_id, levels,
+                      routers_per_level, latched=False):
+    chip = {"range": (start_id, end_id), "no_levels": levels,
+            "no_routers": levels * routers_per_level}
+    cost, endpoint, _ = _native_vertical_route(
+        src_router, dest_level, chip, _evaluation_tsv_assignment(), latched,
+        None)
+    return cost, endpoint
 
 def _same_chiplet_3d_cost(src, dest):
     start_id, end_id, levels, routers_per_level = _3d_chiplet_params(src)
@@ -496,7 +581,7 @@ def _3d_to_base_cost(router_id, info):
     current_router = router_id
     if sz != 0:
         cost, current_router = _walk_3d_to_level(
-            router_id, 0, start_id, end_id, levels, routers_per_level
+            router_id, 0, start_id, end_id, levels, routers_per_level, latched=True
         )
         if current_router is None:
             return INF
@@ -941,10 +1026,12 @@ def _validate_tsv_placement_single_3d(tsv_placement, router_coordinates, base_of
         if rebuilt is not None and is_valid_tsv_placement(rebuilt):
             return rebuilt
 
-    raise ValueError(
-        "Unable to build a spacing-valid TSV placement after "
-        f"{TSV_REBUILD_ATTEMPTS} rebuild attempts"
-    )
+    candidates = [i for i in range(routers_per_level)
+                  if (i % CHIP_COLS + i // CHIP_COLS) % 2 == 0]
+    if len(candidates) < target_tsv_count:
+        raise ValueError("Footprint cannot fit the required separated TSV columns")
+    selected = set(random.sample(candidates, target_tsv_count))
+    return [int(i in selected) for i in range(routers_per_level)]
 
 
 def validate_tsv_placement_3p5d(particle_state, chiplet_layout, router_coordinates):
@@ -954,6 +1041,10 @@ def validate_tsv_placement_3p5d(particle_state, chiplet_layout, router_coordinat
         if chip["type"] == "3d":
             no_levels = chip["no_levels"]
             routers_per_level = no_routers // no_levels
+            if no_levels == 1:
+                particle_state[idx][1] = [0] * routers_per_level
+                offset += no_routers
+                continue
             _, tsv_placement, _, _ = particle_state[idx]
             particle_state[idx][1] = _validate_tsv_placement_single_3d(
                 tsv_placement,
@@ -969,26 +1060,25 @@ def _count_vertical_communications_3d_chip(core_to_router, router_coordinates, e
     start_id, end_id = chip_range
     vertical = 0
 
-    with open(edge_set_file, "r", encoding="utf-8") as f:
-        for line in f:
-            vals = line.split()
-            if len(vals) < 3:
-                continue
+    for line in _edge_set_lines(edge_set_file):
+        vals = line.split()
+        if len(vals) < 3:
+            continue
 
-            src_core = int(vals[0])
-            dest_core = int(vals[1])
+        src_core = int(vals[0])
+        dest_core = int(vals[1])
 
-            if src_core not in core_to_router or dest_core not in core_to_router:
-                continue
+        if src_core not in core_to_router or dest_core not in core_to_router:
+            continue
 
-            src_router = start_id + core_to_router.index(src_core)
-            dest_router = start_id + core_to_router.index(dest_core)
+        src_router = start_id + core_to_router.index(src_core)
+        dest_router = start_id + core_to_router.index(dest_core)
 
-            if not (start_id <= src_router <= end_id and start_id <= dest_router <= end_id):
-                continue
+        if not (start_id <= src_router <= end_id and start_id <= dest_router <= end_id):
+            continue
 
-            if router_coordinates[src_router][2] != router_coordinates[dest_router][2]:
-                vertical += 1
+        if router_coordinates[src_router][2] != router_coordinates[dest_router][2]:
+            vertical += 1
 
     return vertical
 
@@ -1013,7 +1103,9 @@ def _validate_tsv_assignment_single_3d(tsv_placement, no_routers, no_levels,
 
             for router in routers:
                 candidate_local_indices = [tsv - layer_offset for tsv in tsv_list]
-                if TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_REDELF_RANDOM:
+                if router in tsv_list:
+                    chosen_local = router - layer_offset
+                elif TSV_ASSIGNMENT_MODE == TSV_ASSIGNMENT_REDELF_RANDOM:
                     chosen_local = _select_capped_redelf_tsv_local_index(
                         router - layer_offset,
                         candidate_local_indices,
@@ -1038,6 +1130,16 @@ def _validate_tsv_assignment_single_3d(tsv_placement, no_routers, no_levels,
                 local_idx = router - base_offset
                 tsv_assignment[local_idx] = layer_offset
 
+    # Native intra routing reads the selection anew at every XY hop. A cap
+    # preference must not produce a forwarding loop. Nearest-TSV fallback is
+    # applied only to a layer whose proposed assignment contains a cycle.
+    for layer in range(no_levels):
+        offset = base_offset + layer * routers_per_level
+        if _assignment_has_cycle(tsv_assignment, base_offset, offset, routers_per_level):
+            candidates = [i for i, bit in enumerate(tsv_placement) if bit]
+            for i in range(routers_per_level):
+                chosen = _nearest_tsv_local_index(i, candidates)
+                tsv_assignment[layer * routers_per_level + i] = offset + chosen
     return tsv_assignment
 
 
@@ -1048,6 +1150,10 @@ def validate_tsv_assignment_3p5d(particle_state, chiplet_layout, router_coordina
         if chip["type"] == "3d":
             no_levels = chip["no_levels"]
             routers_per_level = no_routers // no_levels
+            if no_levels == 1:
+                particle_state[idx][2] = list(range(offset, offset + no_routers))
+                offset += no_routers
+                continue
             core_to_router, tsv_placement, _, _ = particle_state[idx]
             particle_state[idx][2] = _validate_tsv_assignment_single_3d(
                 tsv_placement,
@@ -1069,12 +1175,15 @@ def fix_core_to_router_mapping_3p5d(particle_state, chiplet_layout):
     for chip_idx, _ in enumerate(chiplet_layout):
         flat.extend(particle_state[chip_idx][0])
 
-    missing = list(set(range(total_routers)) - set(flat))
+    if len(flat) != total_routers:
+        raise ValueError("Mapping length must match topology capacity")
+    missing = sorted(set(range(total_routers)) -
+                     {v for v in flat if type(v) is int and 0 <= v < total_routers})
     repeated_indices = []
     seen = {}
 
     for idx, val in enumerate(flat):
-        if val in seen:
+        if val in seen or type(val) is not int or not 0 <= val < total_routers:
             repeated_indices.append(idx)
         else:
             seen[val] = idx
@@ -1102,9 +1211,11 @@ def assign_router_coordinates(total_routers):
             for router_id in range(start_id, end_id + 1):
                 coords[router_id] = _local_coords_3d(router_id, start_id, levels)
         else:
-            for router_id in range(start_id, end_id + 1):
-                x, y = _local_coords_2d(router_id, start_id)
-                coords[router_id] = (x, y, 0)
+            for spec in meta["interposer"]["chiplets"].values():
+                first, last = spec["range"]
+                for router_id in range(first, last + 1):
+                    x, y = _local_coords_2d(router_id, first)
+                    coords[router_id] = (x, y, 0)
 
     if len(coords) != total_routers:
         raise RuntimeError("Router coordinate map incomplete")
@@ -1133,43 +1244,10 @@ def build_global_tsv_assignment(particle_state, chiplet_layout):
     return assignment
 
 
-def _trace_3d_vertical_pairs(start_router, target_level, chip, tsv_assignment):
-    start_id, end_id = chip["range"]
-    no_levels = chip["no_levels"]
-    routers_per_level = chip["no_routers"] // no_levels
-
-    current_router = start_router
-    traversed_pairs = []
-
-    while True:
-        local_idx = current_router - start_id
-        current_level = local_idx // routers_per_level
-        if current_level == target_level:
-            break
-
-        direction = 1 if target_level > current_level else -1
-
-        tsv_router = tsv_assignment.get(current_router, current_router)
-        if not (start_id <= tsv_router <= end_id):
-            tsv_router = current_router
-
-        tsv_local_idx = tsv_router - start_id
-        tsv_level = tsv_local_idx // routers_per_level
-        if tsv_level != current_level:
-            tsv_router = current_router
-            tsv_local_idx = local_idx
-
-        next_level = current_level + direction
-        if next_level < 0 or next_level >= no_levels:
-            break
-
-        pos_in_layer = tsv_local_idx % routers_per_level
-        neighbor_router = start_id + next_level * routers_per_level + pos_in_layer
-        traversed_pairs.append((tsv_router, neighbor_router))
-        current_router = neighbor_router
-
-    return traversed_pairs
-
+def _trace_3d_vertical_pairs(start_router, target_level, chip, tsv_assignment,
+                             latched=False):
+    return _native_vertical_route(start_router, target_level, chip,
+                                  tsv_assignment, latched)[2]
 
 def tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_set_file):
     core_to_router_map = build_core_to_router_map(particle_state, chiplet_layout)
@@ -1202,71 +1280,73 @@ def tsv_variance_3p5d(particle_state, chiplet_layout, router_coordinates, edge_s
                     tsv_traffic[(lower, upper)] = 0.0
                     tsv_traffic[(upper, lower)] = 0.0
 
-    with open(edge_set_file, "r", encoding="utf-8") as f:
-        for line in f:
-            vals = line.split()
-            if len(vals) < 3:
+    for line in _edge_set_lines(edge_set_file):
+        vals = line.split()
+        if len(vals) < 3:
+            continue
+
+        src_core = int(vals[0])
+        dest_core = int(vals[1])
+        bw = float(vals[2])
+
+        if src_core not in core_to_router_map or dest_core not in core_to_router_map:
+            continue
+
+        src_router = core_to_router_map[src_core]
+        dest_router = core_to_router_map[dest_core]
+
+        src_chip_idx = router_to_chip.get(src_router)
+        dest_chip_idx = router_to_chip.get(dest_router)
+
+        if src_chip_idx is not None and src_chip_idx == dest_chip_idx:
+            src_level = router_coordinates[src_router][2]
+            dest_level = router_coordinates[dest_router][2]
+            if src_level == dest_level:
                 continue
 
-            src_core = int(vals[0])
-            dest_core = int(vals[1])
-            bw = float(vals[2])
+            chip = chiplet_layout[src_chip_idx]
+            traversed_pairs = _trace_3d_vertical_pairs(
+                src_router,
+                dest_level,
+                chip,
+                tsv_assignment,
+            )
+            for pair in traversed_pairs:
+                if pair not in tsv_traffic:
+                    raise ValueError("Traffic route uses an absent TSV column")
+                tsv_traffic[pair] += bw
+            continue
 
-            if src_core not in core_to_router_map or dest_core not in core_to_router_map:
-                continue
-
-            src_router = core_to_router_map[src_core]
-            dest_router = core_to_router_map[dest_core]
-
-            src_chip_idx = router_to_chip.get(src_router)
-            dest_chip_idx = router_to_chip.get(dest_router)
-
-            if src_chip_idx is not None and src_chip_idx == dest_chip_idx:
-                src_level = router_coordinates[src_router][2]
-                dest_level = router_coordinates[dest_router][2]
-                if src_level == dest_level:
-                    continue
-
+        if src_chip_idx is not None:
+            src_level = router_coordinates[src_router][2]
+            if src_level != 0:
                 chip = chiplet_layout[src_chip_idx]
                 traversed_pairs = _trace_3d_vertical_pairs(
                     src_router,
+                    0,
+                    chip,
+                    tsv_assignment,
+                    latched=True,
+                )
+                for pair in traversed_pairs:
+                    if pair not in tsv_traffic:
+                        raise ValueError("Traffic route uses an absent TSV column")
+                    tsv_traffic[pair] += bw
+
+        if dest_chip_idx is not None:
+            dest_level = router_coordinates[dest_router][2]
+            if dest_level != 0:
+                chip = chiplet_layout[dest_chip_idx]
+                traversed_pairs = _trace_3d_vertical_pairs(
+                    chip["range"][0] + particle_state[dest_chip_idx][3],
                     dest_level,
                     chip,
                     tsv_assignment,
                 )
                 for pair in traversed_pairs:
-                    if pair in tsv_traffic:
-                        tsv_traffic[pair] += bw
-                continue
-
-            if src_chip_idx is not None:
-                src_level = router_coordinates[src_router][2]
-                if src_level != 0:
-                    chip = chiplet_layout[src_chip_idx]
-                    traversed_pairs = _trace_3d_vertical_pairs(
-                        src_router,
-                        0,
-                        chip,
-                        tsv_assignment,
-                    )
-                    for pair in traversed_pairs:
-                        if pair in tsv_traffic:
-                            tsv_traffic[pair] += bw
-
-            if dest_chip_idx is not None:
-                dest_level = router_coordinates[dest_router][2]
-                if dest_level != 0:
-                    chip = chiplet_layout[dest_chip_idx]
-                    traversed_pairs = _trace_3d_vertical_pairs(
-                        dest_router,
-                        0,
-                        chip,
-                        tsv_assignment,
-                    )
-                    for lower_pair in traversed_pairs:
-                        reversed_pair = (lower_pair[1], lower_pair[0])
-                        if reversed_pair in tsv_traffic:
-                            tsv_traffic[reversed_pair] += bw
+                    if pair not in tsv_traffic:
+                        raise ValueError("Traffic route uses an absent TSV column")
+                    tsv_traffic[pair] += bw
 
     def variance(values):
         if not values:
@@ -1293,23 +1373,22 @@ def cost_function_3p5d(particle_state, chiplet_layout, edge_set_file):
     core_to_router_map = build_core_to_router_map(particle_state, chiplet_layout)
 
     comm_cost = 0.0
-    with open(edge_set_file, "r", encoding="utf-8") as f:
-        for line in f:
-            vals = line.split()
-            if len(vals) < 3:
-                continue
+    for line in _edge_set_lines(edge_set_file):
+        vals = line.split()
+        if len(vals) < 3:
+            continue
 
-            src_core = int(vals[0])
-            dest_core = int(vals[1])
-            bw = float(vals[2])
+        src_core = int(vals[0])
+        dest_core = int(vals[1])
+        bw = float(vals[2])
 
-            if src_core not in core_to_router_map or dest_core not in core_to_router_map:
-                continue
+        if src_core not in core_to_router_map or dest_core not in core_to_router_map:
+            continue
 
-            src_router = core_to_router_map[src_core]
-            dest_router = core_to_router_map[dest_core]
-            hop_countij = calculate_count(src_router, dest_router)
-            comm_cost += hop_countij * bw
+        src_router = core_to_router_map[src_core]
+        dest_router = core_to_router_map[dest_core]
+        hop_countij = calculate_count(src_router, dest_router)
+        comm_cost += hop_countij * bw
 
     return comm_cost
 
@@ -1321,19 +1400,20 @@ def init_normalization_terms(graph_name, edge_set_file, threeD_height):
     with open(input_graph, "r", encoding="utf-8") as f:
         no_of_cores = int(f.readline().strip())
 
-    max_bw = 0.0
-    total_bw = 0.0
-    with open(edge_set_file, "r", encoding="utf-8") as f:
-        for line in f:
-            vals = line.split()
-            if len(vals) < 3:
-                continue
-            bw = float(vals[2])
-            max_bw = max(max_bw, bw)
-            total_bw += bw
+    capacity = sum(meta["range"][1] - meta["range"][0] + 1 for meta in base_icrt.values())
+    if no_of_cores > capacity:
+        raise ValueError("Graph has more cores than the topology can hold")
 
-    if max_bw <= 0.0:
-        max_bw = 1.0
+    total_bw = 0.0
+    for line in _edge_set_lines(edge_set_file):
+        vals = line.split()
+        if len(vals) < 3:
+            continue
+        bw = float(vals[2])
+        if not math.isfinite(bw) or bw < 0:
+            raise ValueError("Traffic bandwidths must be finite and non-negative")
+        total_bw += bw
+
     if total_bw <= 0.0:
         total_bw = 1.0
 
@@ -1341,15 +1421,21 @@ def init_normalization_terms(graph_name, edge_set_file, threeD_height):
     if BASE_INTERPOSER_ENABLED and BASE_ROWS > 0 and BASE_COLS > 0:
         base_hops = BASE_ROWS - 1 + BASE_COLS - 1
 
-    max_hops = (
-        (CHIP_ROWS - 1 + CHIP_COLS - 1) * threeD_height
-        + (threeD_height - 1)
-        + base_hops
-    )
-    if max_hops <= 0:
-        max_hops = 1
-
-    MAX_COMM_COST = max_bw * max_hops * no_of_cores
+    # A cycle-free planar leg uses at most plane_size-1 hops. Bound
+    # both endpoint-to-base legs, including local 2.5D interposers. Using
+    # total bandwidth also bounds dense graphs with more than N edges.
+    stack_leg = ((CHIP_ROWS * CHIP_COLS - 1) * threeD_height * INTRACHIP_LATENCY
+                 + threeD_height * VL_LATENCY)
+    local_leg = (CHIP_ROWS + CHIP_COLS - 2) * INTRACHIP_LATENCY + 2 * VL_LATENCY
+    for meta in base_icrt.values():
+        if meta["type"] == "2.5d":
+            local = meta["interposer"]
+            local_bound = ((CHIP_ROWS + CHIP_COLS - 2) * INTRACHIP_LATENCY
+                           + (local["rows"] + local["cols"] - 2) * INTERPOSER_LATENCY
+                           + 2 * VL_LATENCY)
+            local_leg = max(local_leg, local_bound)
+    max_route_cost = max(1.0, 2 * max(stack_leg, local_leg) + base_hops * INTERPOSER_LATENCY)
+    MAX_COMM_COST = total_bw * max_route_cost
     VAR_COMM_SQ = total_bw * total_bw
 
 
@@ -1439,20 +1525,8 @@ def find_swap_sequence_for_placement(list1, list2):
     work1 = list1.copy()
     work2 = list2.copy()
 
-    count1 = sum(work1)
-    count2 = sum(work2)
-
-    if count1 != count2:
-        if count1 < count2:
-            diff = count2 - count1
-            non_tsv = [i for i, v in enumerate(work1) if v == 0]
-            for idx in random.sample(non_tsv, min(diff, len(non_tsv))):
-                work1[idx] = 1
-        else:
-            diff = count1 - count2
-            tsv_idx = [i for i, v in enumerate(work1) if v == 1]
-            for idx in random.sample(tsv_idx, min(diff, len(tsv_idx))):
-                work1[idx] = 0
+    # Swaps preserve the current number of TSV columns. Compute their
+    # indices against the actual placement, without unapplied temporary flips.
 
     ones_to_zero = []
     zeros_to_one = []
@@ -1652,6 +1726,7 @@ def update_particle(particle,
 
 
 def particle_output_path(graph_name):
+    graph_name = os.path.splitext(os.path.basename(str(graph_name)))[0]
     match = re.search(r"(\d+)$", graph_name)
     if match and graph_name.lower().startswith("graph"):
         return os.path.join("Particles", f"PSO_Particle{match.group(1)}.txt")
@@ -1815,7 +1890,7 @@ def write_particle_file(path,
         data["chiplets"].append(_build_simple_particle_entry(chip, best_particle_state[idx]))
 
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, allow_nan=False)
         f.write("\n")
 
 
@@ -1830,6 +1905,8 @@ def run_pso_3p5d(graph_name,
                  iterations, swarm_size,
                  tsv_assignment_mode=TSV_ASSIGNMENT_RANDOM,
                  seed=None):
+    if iterations < 0:
+        raise ValueError("iterations must be non-negative")
     if swarm_size <= 0:
         raise ValueError("swarm_size must be positive")
 
@@ -1857,15 +1934,18 @@ def run_pso_3p5d(graph_name,
     input_graph = graph_input_path(graph_name)
     edge_set_file = edge_set_output_path(graph_name)
     create_edge_set(input_graph, edge_set_file)
+    edge_set_file = _EdgeSetInput(edge_set_file)
 
     router_coordinates = assign_router_coordinates(total_routers)
     init_normalization_terms(graph_name, edge_set_file, threeD_height)
 
     tsv_list = list(range(total_routers))
-    particles = [
-        Particle3p5d(chiplet_layout, router_coordinates, edge_set_file, tsv_list)
-        for _ in range(swarm_size)
-    ]
+    particles = []
+    progress_every = max(1, swarm_size // 10)
+    for index in range(swarm_size):
+        particles.append(Particle3p5d(chiplet_layout, router_coordinates, edge_set_file, tsv_list))
+        if index == 0 or (index + 1) % progress_every == 0 or index + 1 == swarm_size:
+            print(f"Initializing PSO swarm: {index + 1}/{swarm_size}", flush=True)
     local_best = [particle.clone() for particle in particles]
 
     global_best = min(local_best, key=lambda p: p.fitness_value).clone()
@@ -1873,6 +1953,16 @@ def run_pso_3p5d(graph_name,
     stall_count = 0
 
     for iteration in range(iterations):
+        for idx, particle in enumerate(particles):
+            update_particle(
+                particle,
+                local_best=local_best[idx],
+                global_best=global_best,
+                chiplet_layout=chiplet_layout,
+                router_coordinates=router_coordinates,
+                edge_set_file=edge_set_file,
+            )
+
         for idx, particle in enumerate(particles):
             particle.evaluate(chiplet_layout, router_coordinates, edge_set_file)
 
@@ -1902,23 +1992,6 @@ def run_pso_3p5d(graph_name,
                 f"{CONVERGENCE_STALL_LIMIT} stagnant iterations without improvement."
             )
             break
-
-        for idx, particle in enumerate(particles):
-            update_particle(
-                particle,
-                local_best=local_best[idx],
-                global_best=global_best,
-                chiplet_layout=chiplet_layout,
-                router_coordinates=router_coordinates,
-                edge_set_file=edge_set_file,
-            )
-
-    for idx, particle in enumerate(particles):
-        particle.evaluate(chiplet_layout, router_coordinates, edge_set_file)
-        if particle.fitness_value < local_best[idx].fitness_value:
-            local_best[idx] = particle.clone()
-        if particle.fitness_value < global_best.fitness_value:
-            global_best = particle.clone()
 
     end_time = time.time()
 
