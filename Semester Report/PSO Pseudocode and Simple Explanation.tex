@@ -1,0 +1,459 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=21mm,headheight=14pt]{geometry}
+\usepackage{amsmath,array,tabularx,xcolor,listings,fancyhdr}
+\definecolor{Heading}{HTML}{17324A}
+\definecolor{Link}{HTML}{18675C}
+\definecolor{Muted}{HTML}{465B6A}
+\definecolor{Panel}{HTML}{F1F5F7}
+\usepackage[colorlinks=true,linkcolor=Heading,urlcolor=Link]{hyperref}
+\hypersetup{pdftitle={PSO: Pseudocode and Very Simple Explanations},
+  pdfsubject={Base PSO, PSO with DP, and PSO with DP and multithreading}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\renewcommand{\arraystretch}{1.18}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily\color{Muted}PSO explained simply}
+\fancyhead[R]{\small\sffamily\color{Muted}Semester report companion}
+\fancyfoot[R]{\small\sffamily\color{Muted}\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\lstset{basicstyle=\ttfamily\fontsize{9.2}{11}\selectfont,
+  backgroundcolor=\color{Panel},frame=single,rulecolor=\color{Panel},
+  xleftmargin=5pt,xrightmargin=5pt,framesep=5pt,
+  columns=fullflexible,keepspaces=true,showstringspaces=false,
+  breaklines=true,breakatwhitespace=true,aboveskip=7pt,belowskip=7pt}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\simple}[1]{\textbf{In very simple words:} #1}
+\raggedbottom
+
+\begin{document}
+
+{\sffamily\bfseries\color{Heading}\LARGE
+PSO: pseudocode and\\very simple explanations\par}
+\vspace{3mm}
+PSO means \emph{particle swarm optimization}. This guide follows the three
+programs in \path{Final/}. The pseudocode shows
+their main steps in easy language. It is a description to read, rather than
+Python code to run.
+
+\section*{1. First, understand the problem}
+Imagine that tasks are people and routers are seats. People who talk a lot
+should sit close together. Our network also has several floors. A TSV is a
+vertical link between floors, like an elevator. Its full name is
+\emph{through-silicon via}. We want short routes and we
+want to avoid sending most of the traffic through just one elevator.
+
+\begin{tabularx}{\linewidth}{@{}>{\bfseries}p{31mm}X@{}}
+Word & Very simple meaning \\
+\hline
+Particle & One complete possible design: task seats, TSV locations,
+TSV choices, and attachment points. \\
+Swarm & A group of particles, so we can try several designs. \\
+Fitness / score & A number saying how good a design is. Lower is better. \\
+Personal best & The best design one particle has found so far. \\
+Global best & The best design the whole group has found so far. \\
+Velocity & A saved list of swaps to try. Here it is not a physical speed. \\
+Iteration & One round of moving and checking all particles. \\
+Repair & Fix rules, such as keeping each task exactly once and making TSV
+choices valid. \\
+\end{tabularx}
+
+\subsection*{What do all three versions try to improve?}
+They use the same score. Half comes from communication cost and half from
+uneven TSV use, after scaling both numbers to make them comparable.
+\[
+\text{score}=0.5\,\frac{\text{communication cost}}{\text{cost reference}}
+ +0.5\,\frac{\text{TSV imbalance}}{\text{imbalance reference}}.
+\]
+Communication cost adds \emph{traffic amount $\times$ route cost} for every
+communicating pair. If traffic is 4 and the route costs 3, that pair adds 12.
+The route uses the configured costs of its links.
+
+TSV imbalance measures how unevenly traffic uses the installed vertical
+links. Loads of $[12,0]$ are uneven; $[6,6]$ are even. The code measures upward
+and downward traffic separately and uses the larger variance. A link with
+zero traffic still counts when calculating this imbalance.
+
+\simple{All three versions search for good designs. DP saves repeated work.
+Multithreading gives different remaining checks to different workers.}
+
+\clearpage
+\section*{2. Base PSO}
+\textbf{Program:} \path{Final/pso_3p5d.py}
+
+\simple{Make a group of designs. Each design learns from its own best attempt
+and the group's best attempt. Move, check, remember, and repeat.}
+
+\subsection*{Pseudocode}
+\begin{lstlisting}
+ALGORITHM BASE_PSO(graph, network, N, maximum_rounds, seed)
+    Set the random seed
+    Prepare the network, traffic edges, and score references
+    particles = MAKE_SWARM(N)              // random, repaired designs
+    FOR each particle p, in order
+        p.metrics = SCORE_BASE(p.design)   // calculate from scratch
+        personal_best[p] = COPY(p)
+    global_best = COPY(the lowest-score personal_best)
+    stall = 0
+
+    FOR round = 1 TO maximum_rounds
+        previous_best_score = global_best.score
+        FOR each particle p, in order
+            MOVE_AND_REPAIR(p, personal_best[p], global_best)
+        FOR each particle p, in order
+            p.metrics = SCORE_BASE(p.design)
+            IF p.score < personal_best[p].score
+                personal_best[p] = COPY(p)
+            IF p.score < global_best.score
+                global_best = COPY(p)
+        IF global_best.score < previous_best_score
+            stall = 0
+        ELSE
+            stall = stall + 1
+        IF stall >= 100
+            BREAK
+    Save and RETURN global_best
+\end{lstlisting}
+
+\subsection*{What these steps mean}
+\begin{enumerate}
+\setlength{\itemsep}{1pt}
+\setlength{\parskip}{0pt}
+\item \textbf{Make designs.} Start with $N$ different attempts. Repair each one
+and start its saved swap lists empty.
+\item \textbf{Remember good attempts.} At the start, each particle's first
+design is its personal best. The lowest-score one is the global best.
+\item \textbf{Move the whole group.} Every particle makes its move using the
+best designs known at the start of that round.
+\item \textbf{Check and remember again.} Score particles one at a time.
+Replace a remembered design only when the new score is strictly lower.
+\item \textbf{Stop.} Finish at the round limit, or after 100 rounds with no
+new global best. Return the best design found during the run.
+\end{enumerate}
+
+For example, if a particle's personal-best score is 10 and its new score is
+8, remember the new design. If the group's best score was 9, replace that
+too. If its next score is 11, its personal best stays at 8.
+
+\textbf{Why COPY?} A remembered design must stay unchanged when the current
+particle moves later. PSO finds the best design it has seen; it does not
+prove that no better design exists.
+
+\clearpage
+\section*{3. Moving and scoring: shared ideas}
+\label{page:shared}
+All three versions use the same movement and scoring rules.
+
+\subsection*{A move means trying some swaps}
+Suppose a mapping is $[A,B,C,D]$. Swapping positions 0 and 2 gives
+$[C,B,A,D]$. Each task still appears once. The real particle also stores
+TSV locations, TSV assignments, and attachment points.
+
+\begin{lstlisting}
+PROCEDURE MOVE_AND_REPAIR(p, personal_best, global_best)
+    Find task swaps toward personal_best and toward global_best
+    Try saved old swaps, each with probability 0.10
+    Try personal-best task swaps, each with probability 0.04
+    Try global-best task swaps, each with probability 0.02
+    Save the swaps actually applied as the new task velocity
+
+    For every 3D stack, do the same with its TSV-location swaps
+    For each attachment, possibly copy the personal-best choice (0.04)
+    Then possibly copy the global-best attachment choice (0.02)
+
+    Repair task placement, TSV locations, and TSV assignments
+\end{lstlisting}
+
+Each probability applies to an individual proposed swap or copy. A
+probability of 0.10 means about a 10-in-100 chance on each try. It does not
+mean that exactly 10 percent of all swaps must happen.
+
+\simple{Keep a little of the previous move, try a little of what worked for
+this particle, and try a little of what worked for the group. Then fix any
+broken rules.}
+
+\subsection*{How a design gets its score}
+The following shows the scoring idea in one combined pass. The actual code
+has separate functions for communication cost and TSV loads.
+
+\begin{lstlisting}
+FUNCTION SCORE_BASE(design)
+    Find the router holding each task
+    communication_cost = 0
+    Set the load of every installed directed TSV link to zero
+
+    FOR each traffic edge (task_a, task_b, traffic)
+        Follow its route using this design's routing rules
+        communication_cost += traffic * route_cost
+        FOR each directed TSV crossing on that route
+            crossing_load += traffic
+
+    up_variance = variance of upward-link loads
+    down_variance = variance of downward-link loads
+    imbalance = MAX(up_variance, down_variance)
+    score = 0.5 * communication_cost / cost_reference
+          + 0.5 * imbalance / imbalance_reference
+    RETURN (score, communication_cost, imbalance,
+            up_variance, down_variance)
+\end{lstlisting}
+
+\textbf{Metrics} means the five returned numbers. Later pseudocode writes
+\code{p.metrics} when assigning all five, and \code{p.score} when comparing
+just the first number. A direction with no TSV links contributes zero
+variance.
+
+\clearpage
+\section*{4. PSO with DP}
+\textbf{Program:} \path{Final/pso_with_only_dp.py}
+
+DP means \emph{dynamic programming}: solve a smaller repeated problem once,
+save its answer, and reuse it. This version also remembers whole-design
+scores. A \emph{cache} is simply a table of saved answers.
+
+\simple{Use the same PSO search, but check the answer table before doing work
+again. The remaining checks run one at a time.}
+
+\subsection*{Pseudocode}
+\begin{lstlisting}
+ALGORITHM PSO_WITH_DP(graph, network, N, maximum_rounds, seed)
+    Set the random seed and prepare the problem
+    Read the traffic edges once
+    cache = empty whole-design answer table
+    particles = MAKE_SWARM(N)
+    CACHED_BATCH(particles, cache, workers = NONE)
+    personal_best = COPIES of all particles
+    global_best = COPY(the lowest-score personal_best)
+    stall = 0
+
+    FOR round = 1 TO maximum_rounds
+        previous_best_score = global_best.score
+        FOR each particle p, in order
+            MOVE_AND_REPAIR(p, personal_best[p], global_best)
+
+        CACHED_BATCH(particles, cache, workers = NONE)
+
+        FOR each particle p, in order
+            IF p.score < personal_best[p].score
+                personal_best[p] = COPY(p)
+            IF p.score < global_best.score
+                global_best = COPY(p)
+
+        IF global_best.score < previous_best_score
+            stall = 0
+        ELSE
+            stall = stall + 1
+        IF stall >= 100
+            BREAK
+
+    Save and RETURN global_best
+\end{lstlisting}
+
+\subsection*{What changes inside the checking step?}
+\code{CACHED\_BATCH}, shown on page~\pageref{page:batch}, first looks up every
+design. It groups identical missing designs and calculates each group just
+once. With \code{workers = NONE}, those calculations happen one after another.
+
+Inside each missing design's evaluation, DP also remembers reusable route
+parts and distances for ordered router pairs. The next page explains the
+route part. The score formula remains the one on page~\pageref{page:shared}.
+
+\textbf{Example:} If particles 1 and 3 have exactly the same repaired design,
+one evaluation supplies both scores. The same task placement alone is not
+enough: TSV locations, TSV assignments, and attachments must match too.
+The answer table also identifies the network, traffic, and scoring settings,
+because changing any of these can change the score.
+
+\clearpage
+\section*{5. The DP part, explained with a tiny route}
+Imagine two routes headed toward the same layer:
+\begin{lstlisting}
+First route:   A -> B -> C -> D
+Second route:  X -> B -> C -> D
+\end{lstlisting}
+After the first route, save the remaining route from B. When the second
+route reaches B, reuse that answer. There is no need to follow B, C, and D
+again if the routing conditions are the same.
+
+\subsection*{What does the saved answer contain?}
+It stores the remaining route cost, the router reached on the target layer,
+and the remaining directed TSV crossings. The key says \emph{current router,
+target layer, forwarding mode}. Here, the mode says whether to keep the
+selected TSV until the next vertical crossing or choose again at each
+planar step. The particle's routing settings stay fixed while this table
+is used.
+
+\subsection*{Simple route-DP pseudocode}
+\begin{lstlisting}
+FUNCTION ROUTE_DP(router, target_layer, mode, route_table)
+    key = (router, target_layer, mode)
+    IF key is in route_table
+        RETURN route_table[key]
+
+    IF router is already on target_layer
+        answer = (0, router, empty_crossing_list)
+    ELSE
+        (next_router, step_cost, step_crossings) =
+            TAKE_NEXT_ROUTING_STEP(router, target_layer, mode)
+        rest = ROUTE_DP(next_router, target_layer, mode, route_table)
+        answer.cost = step_cost + rest.cost
+        answer.arrival_router = rest.arrival_router
+        answer.crossings = step_crossings followed by rest.crossings
+
+    route_table[key] = answer
+    RETURN answer
+\end{lstlisting}
+
+\simple{The answer from here is the cost of the next step plus the saved
+answer from the next place.}
+
+If B to C costs 1 and C to D costs 1, the saved remaining cost at B is 2.
+If X to B costs 1, the second route costs $1+2=3$. These are made-up small
+costs to show the idea.
+
+The zero at the target layer means the \emph{vertical traversal} is done.
+The full route calculation still adds any final movement across that layer
+to reach the destination router.
+
+\textbf{Traffic still counts.} If two flows reuse the same saved crossing,
+both flows add their own traffic to its load. Saving a route must not make
+the second flow disappear from the imbalance calculation.
+
+\textbf{How this matches the program.} This short version calls itself to
+make the dependency easy to see. The program walks forward, records the
+steps, and fills answers backward instead. It uses fresh route tables for
+a design evaluation; the cost and TSV-load passes use separate tables.
+The whole-design table lasts across rounds. Thus a changed design does not
+accidentally reuse another design's routing answers.
+
+\clearpage
+\section*{6. PSO with DP and multithreading}
+\textbf{Entry program:} \path{Final/pso_dp_multithreaded.py}\\
+It calls the DP program with threaded evaluation enabled.
+
+A \emph{thread} is a worker inside the same running program. The main
+thread acts like a teacher handing different papers to assistants to check.
+Here, each paper is one complete repaired design.
+
+\simple{First reuse saved answers. Then give different missing designs to
+workers. Wait for their scores before starting the next round.}
+
+\subsection*{Pseudocode}
+\begin{lstlisting}
+ALGORITHM PSO_DP_MULTITHREADED(graph, network, N,
+                              maximum_rounds, seed, T)
+    Set the random seed and prepare the problem
+    Read the traffic edges once
+    cache = empty whole-design answer table
+    workers = start a pool of T worker threads
+    particles = MAKE_SWARM(N)
+    CACHED_BATCH(particles, cache, workers)
+    personal_best = COPIES of all particles
+    global_best = COPY(the lowest-score personal_best)
+    stall = 0
+
+    FOR round = 1 TO maximum_rounds
+        previous_best_score = global_best.score
+        FOR each particle p, in order, on the main thread
+            MOVE_AND_REPAIR(p, personal_best[p], global_best)
+
+        CACHED_BATCH(particles, cache, workers)
+
+        FOR each particle p, in order, on the main thread
+            IF p.score < personal_best[p].score
+                personal_best[p] = COPY(p)
+            IF p.score < global_best.score
+                global_best = COPY(p)
+
+        IF global_best.score < previous_best_score
+            stall = 0
+        ELSE
+            stall = stall + 1
+        IF stall >= 100
+            BREAK
+
+    Close the worker pool, including if the run exits with an error
+    Save and RETURN global_best
+\end{lstlisting}
+
+\textbf{Who does what?} The main thread makes every random move, repairs
+designs, manages the answer table, and updates the best designs. Workers
+only calculate metrics for different missing designs. Each worker has its
+own active particle, TSV assignments, and local route tables.
+
+\textbf{Why wait?} All scores from this round must be ready before the
+next round uses the updated global best. Results are collected in submitted
+order and best designs are updated in particle order. This keeps the seeded
+DP search repeatable across worker counts for the same inputs.
+
+The pool is reused across rounds. With one effective worker, the program
+checks designs directly on the main thread. Unless configured otherwise,
+the worker count is the smallest of the CPU count, swarm size, and four.
+
+\clearpage
+\section*{7. The checking step used by both DP versions}
+\label{page:batch}
+\textbf{Cache hit} means ``we already have the answer.'' A \textbf{cache miss}
+means ``we must calculate it.'' This pseudocode assumes the whole-design
+cache is enabled, as it is by default.
+
+\begin{lstlisting}
+PROCEDURE CACHED_BATCH(particles, cache, workers)
+    pending = empty groups, kept in first-seen order
+
+    FOR each particle p, in order
+        key = (problem_settings, complete_repaired_design_of_p)
+        IF key is in cache
+            p.metrics = cache[key]
+        ELSE IF key is already in pending
+            Add p to that key's group
+        ELSE
+            Create a group with COPY(p.design) and particle p
+
+    IF workers is NONE
+        Calculate SCORE_DP for each pending group, one at a time
+    ELSE
+        Send one SCORE_DP job per pending group to the workers
+        Wait for all jobs; collect results in submitted order
+
+    FOR each pending group and its returned metrics, in order
+        IF cache has room
+            Save (group.key, metrics) in cache
+        Give those metrics to every particle in the group
+
+FUNCTION SCORE_DP(design)
+    Use the same scoring rules as SCORE_BASE
+    Use fresh route-DP tables and an ordered router-pair table
+    RETURN the five metrics
+\end{lstlisting}
+
+The real whole-design cache holds up to 200,000 entries. When full, it
+continues reading old answers but stops adding new ones. Duplicate missing
+designs within a batch can still share one evaluation.
+
+\subsection*{A small example comparing all three}
+Suppose a batch has six particles: $[A,B,A,C,B,C]$. Here A, B, and C mean
+three complete designs, and the answer table starts empty.
+
+\begin{tabularx}{\linewidth}{@{}>{\bfseries}p{30mm}p{24mm}X@{}}
+Version & Full checks & What happens \\
+\hline
+Base PSO & 6 & Check each particle separately. \\
+PSO with DP & 3 & Check A, B, and C once each, one after another. \\
+DP + threads & 3 & Give A, B, and C to workers; reuse each result. \\
+\end{tabularx}
+
+With $T$ workers and $U$ different missing designs, at most $\min(T,U)$ jobs
+can be in progress together. Three checks do not guarantee three times the
+speed: scheduling and serial work take time, and Python's usual interpreter
+lock can limit CPU-heavy threads. Measure elapsed time to see the benefit.
+
+\subsection*{Three sentences to remember}
+\textbf{Base PSO:} Try designs and learn from the best ones.\\
+\textbf{PSO with DP:} Do that while reusing answers to repeated calculations.\\
+\textbf{PSO with DP and threads:} Reuse answers, then share the remaining
+design checks among workers.
+
+\end{document}
