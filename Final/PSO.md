@@ -1,0 +1,125 @@
+# Particle Swarm Optimization for 3.5D Networks-on-Chip
+
+This document describes the three optimizers in the Full-Pipeline release. Each searches for a core placement, sparse through-silicon via (TSV) placement, and chiplet attachment configuration for a fixed application graph and topology. The variants use the same objective and swarm update. They differ in how they obtain the fitness of a repaired particle.
+
+## 1. Baseline discrete PSO
+
+### Application graph and topology
+
+The input gives the number of application cores followed by a weighted communication matrix. The optimizer extracts upper-triangular, nonzero entries as an edge set `E`. Each edge `(i, j)` carries bandwidth `b_ij`. The topology combines 3D stacks of planar meshes and 2.5D complexes of planar chiplets on local interposers. Multiple units are connected by a shared base interposer. A single unit has no shared base interposer.
+
+For a plane with `R` rows and `C` columns, stack height `H`, complex width `W`, and unit counts `n_3D` and `n_2.5D`, core capacity is
+
+$$
+N = R C \bigl(H n_{\mathrm{3D}} + W n_{\mathrm{2.5D}}\bigr).
+$$
+
+Core IDs form a global permutation over the available router slots. The mapping list is indexed by router slot and stores the core at that router. The evaluator inverts it to look up the router for each traffic endpoint. If capacity exceeds the graph size, the additional IDs are placeholders with no application traffic.
+
+### Particle representation and initialization
+
+- **3D stack gene.** A slice of the core permutation, a binary TSV placement mask for one plane, a per-router TSV assignment, and the bottom-layer router that attaches to the base interposer when present.
+- **2.5D complex gene.** A slice of the core permutation and the local-interposer router that attaches to the shared base when present. Each 2D chiplet connects to its local interposer through its bottom-right router.
+- **Swarm memory.** Each particle keeps its current state, an ordered mapping swap velocity, and one ordered TSV swap velocity per stack. It also has a personal best snapshot. The swarm keeps the best snapshot found globally.
+
+Initialization samples a random global core permutation, TSV masks, and attachment indices. Before evaluation, repair restores the permutation and legal TSV configuration. For a multi-layer stack the same selected columns span every adjacent-layer interface. Repair aims for two through `max(2, floor(R*C/4))` TSV columns, with pairwise Manhattan distance greater than one. It repairs conflicts and can rebuild the mask with separated positions on a checkerboard. A single-layer stack has no active TSVs.
+
+The evaluator needs each non-TSV router to resolve to a physical TSV on its current layer. Physical TSV routers assign to themselves. The `elevator` mode favors the nearest eligible TSV using an assignment-count preference. The `random` mode follows the code's REDELF Ruleset B selection with south or due-east candidates and a pivot fallback. The count preference is approximately `ceil(routers_per_layer / active_columns)` assignments per TSV. If native hop-by-hop forwarding would cycle, the layer's assignments fall back to nearest TSVs. Repair rebuilds assignments after movement, so they reflect the resulting placement.
+
+### Static routing and communication cost
+
+The fitness calculation assigns every application edge a route length. Same-plane traffic uses Manhattan distance. In a 3D stack, cross-layer traffic moves toward a chosen TSV, advances a layer at a time, and completes its planar route on the destination layer. Native intra-stack routing can read the local assignment again after an XY hop. External descent latches the selected TSV for that layer until crossing it. External ascent starts at the destination stack's selected bottom-layer attachment router. Within a 2.5D complex, traffic between distinct chiplets uses their local interposer. Traffic between units includes endpoint attachment legs and a Manhattan route on the shared base.
+
+Let `r_i` denote the router hosting core `i`, and let `d(r_i, r_j)` be the modeled route latency. Intra-chip XY hops, interposer XY hops, and vertical links each cost one unit with the shipped constants. The traffic-weighted communication cost reported as `comm_cost` is
+
+$$
+C_{\mathrm{comm}} = \sum_{(i,j)\in E} b_{ij}\,d(r_i,r_j).
+$$
+
+### TSV load balance and the fitness function
+
+The evaluator initializes an upward and a downward counter for each installed TSV link on every stack interface. It adds an edge's bandwidth to every directed TSV crossing on that edge's route. This includes the source descent and destination ascent of inter-unit traffic. Unused installed links enter the variance calculation with load zero. A direction with no links has variance zero. For direction `s`, with `m_s` links and link loads `L_k`, the population mean and variance are
+
+$$
+\mu_s = \frac{1}{m_s}\sum_{k=1}^{m_s}L_k,
+\qquad
+V_s = \frac{1}{m_s}\sum_{k=1}^{m_s}(L_k-\mu_s)^2.
+$$
+
+Let `B` be the sum of edge bandwidths, with a fallback of 1 for a zero sum. The code sets `V_ref = B^2` and `C_ref = B * d_bound`. The route bound uses twice the larger of a stack leg bound and a local-interposer leg bound, plus the base-interposer diameter. The stack leg budgets up to `R*C - 1` planar hops per layer and one vertical hop per layer. The local leg budgets a chiplet diameter, a local-interposer diameter where present, and two vertical links. The bound has a minimum of one unit. The optimizer minimizes
+
+$$
+F = w\frac{C_{\mathrm{comm}}}{C_{\mathrm{ref}}}
+  + (1-w)\frac{\max(V_{\uparrow},V_{\downarrow})}{V_{\mathrm{ref}}},
+\qquad w=0.5.
+$$
+
+The CSV's `Variance` is the maximum directional variance, and `Normalized Variance` is the weighted variance term in this equation. For example, upward loads `[2, 4]` give a variance of 1, while downward loads `[3, 9]` give 9. The fitness therefore uses 9 in the variance term. The optimizer computes these values from the graph and modeled routes. Noxim subsequently measures dynamic behavior such as queuing delay, throughput, and energy for the selected particle.
+
+### Discrete velocity, iteration, and stopping
+
+In standard continuous PSO, each particle has a position and a velocity. The personal best is the lowest-fitness position that particle has visited, and the global best is the lowest-fitness position found by the swarm. For particle `i` in iteration `t`, a standard update uses inertia `omega`, attraction coefficients `c_1` and `c_2`, and independent uniform draws `u_1, u_2` from the unit interval.
+
+$$
+\begin{aligned}
+v_i^{t+1} &= \omega v_i^t
+  + c_1 u_1(p_i-x_i^t)
+  + c_2 u_2(g-x_i^t), \\
+x_i^{t+1} &= x_i^t + v_i^{t+1}.
+\end{aligned}
+$$
+
+This project implements the three influences through swaps. A position encodes a mapping and hardware choices, and a velocity is an ordered list of swaps. The optimizer derives a sequence from the current permutation to each best permutation by matching target values from left to right. For TSV masks it pairs mismatched one and zero positions, so a swap moves a TSV column while preserving the count during the swap.
+
+For each update, it considers retained swaps from the previous velocity first, then swaps toward the personal best, then swaps toward the global best. Each proposed swap is independently accepted with probabilities 0.10, 0.04, and 0.02, respectively. Accepted swaps are applied in order and stored as the next velocity. For example, converting `[0,1,2,3]` toward `[2,0,1,3]` proposes `(0,2)` followed by `(1,2)`. Applying both gives the target permutation. Attachment indices can independently copy the personal and global best with the same cognitive and social probabilities.
+
+The optimizer initializes and scores the swarm, then repeats the following generation:
+
+1. Move every particle using the current personal and global best snapshots.
+2. Repair the particle, then evaluate its current state.
+3. Replace each best snapshot only when its effective fitness strictly improves.
+
+The run stops at the iteration limit or after 100 consecutive generations without a strict global improvement. A zero-iteration run still scores the initial swarm and writes the best particle. The baseline evaluates particles serially and traces routes on demand.
+
+## 2. PSO with dynamic programming
+
+`PSO_DP` adds reuse in fitness evaluation. The swarm still proposes and repairs the same kinds of particles, and each evaluation returns the same five quantities as baseline PSO. The serial DP variant evaluates cache misses on the caller thread.
+
+### Route suffixes
+
+Within one repaired particle, the TSV placement and assignment fix the next routing decision. Different traffic flows can merge at the same router while heading toward the same layer under the same selection rule. The route suffix after that point is reusable. A suffix state is `(current_router, target_layer, latched)`. The cached value contains the remaining cost, the router where the target layer is reached, and the ordered list of directed TSV crossings.
+
+Write `D(s)` for the remaining cost, `A(s)` for the arrival router, and `P(s)` for the crossing list. Let `s'` be the next state, `c(s)` the cost of taking that transition, and `Q(s)` its crossing list, which is empty for an XY step. On the target layer the tuple is `(0, current_router, empty)`. Elsewhere the recurrence is
+
+$$
+\bigl(D(s), A(s), P(s)\bigr)
+  = \bigl(c(s)+D(s'),\ A(s'),\ Q(s)\,\Vert\,P(s')\bigr).
+$$
+
+The implementation walks forward to a known suffix or to the destination layer. It then walks backward through the pending steps to fill the cache. A later route can stop as soon as it reaches a known state. For example, if a traversal from layer 0 to layer 3 in one TSV column has already cached the suffix from layer 1, a traversal beginning at that same layer-1 router can reuse the two remaining crossings directly.
+
+Communication cost and TSV load accounting each keep a per-evaluation route cache. Communication cost also memoizes the complete distance for an ordered source/destination router pair. Directed keys preserve differences between ascent and descent. All routing caches are scoped to one particle's current routing configuration.
+
+### Whole-particle fitness reuse
+
+After repair the complete particle is recursively converted into an immutable key. The key covers the core permutation, TSV placement and assignments, and attachments. It is paired with a digest of the evaluation context, which covers topology, coordinates, graph edges, normalization and latency constants. Re-encountering this key can reuse the stored tuple `(fitness, communication cost, variance, upward variance, downward variance)`.
+
+The coordinator checks the run-level cache before dispatch. If several particles in the same generation have the same pending key, it evaluates one snapshot and applies the result to all of them. The cache holds up to 200,000 entries and stops inserting when full. Existing entries can still be read. Cache statistics include both retained hits and duplicates merged within a batch. DP also parses the graph edge list once so repeated fitness calls can reuse its numeric edge tuples.
+
+If a generation has `S` particles and `U` distinct misses, the DP evaluator performs `U` full evaluations after key construction, where `U <= S`. Within an evaluation, uncached routing steps are computed once per suffix state in each route cache. The implementation still scans edges and accumulates their bandwidth, and it stores crossing tuples. Runtime and memory benefits depend on how much state or route overlap the workload produces.
+
+## 3. PSO with dynamic programming and multithreading
+
+`PSO_DP_MT` keeps the same DP evaluator and adds a `ThreadPoolExecutor`. Parallel work consists of full fitness evaluations for distinct cache misses in the initial swarm or one generation. Each task receives a copied, repaired state and reads the shared topology, coordinates, and parsed edge data. A worker uses thread-local routing context and evaluation-local DP tables, which isolate its active particle and assignments.
+
+The coordinator performs all stochastic particle moves, repairs, cache lookups, and best updates. It submits the distinct misses together and waits for the generation's evaluations to finish. Results are assigned in the same order as the submitted tasks, then the coordinator updates the best snapshots in swarm order. These choices preserve random-number consumption and strict-improvement tie behavior across the serial and threaded DP runs for fixed inputs and seed.
+
+With `T` workers and `U` unique misses, at most `min(T, U)` evaluations can execute concurrently. The number of workers defaults to the minimum of the available CPU count, the swarm size, and four, unless explicitly configured. An effective count of one evaluates directly on the coordinator. Threads are created once for the optimizer run and shut down on exit.
+
+Parallel evaluation adds scheduling and synchronization overhead. Swarm movement, repair, and result merging are serial, and the standard CPython global interpreter lock can limit CPU-bound parallel execution. Cache-heavy generations also leave fewer jobs for workers. Compare wall-clock timings on the target workload to measure any speedup. With fixed graph, topology, mode, and seeds, the DP result and threaded DP result should agree on the selected chromosome and fitness even when timings differ.
+
+## 4. From best particle to the final workbook
+
+Each variant writes its best chromosome, topology parameters, and static metrics as JSON in a particle text file. The pipeline generates Noxim YAML with chiplet dimensions, attachments, and vertical links. A separate stage maps graph endpoints through the particle and into the simulator's router ID space. It writes traffic rows whose injection probabilities are proportional to the edge weights. The default traffic table uses upper-triangular entries, and the simulation's optional directed mode reads both directions from the matrix.
+
+Noxim runs the generated topology and traffic table with the selected power model. After it exits successfully, the pipeline parses numeric metrics from the log and appends them alongside the static results and timings in the variant's CSV. Excel export maps communication cost, directional TSV variance, normalized variance, and CPU time to the static sheet. The dynamic sheet includes global average delay, average IP throughput, total energy, and received packets. It also calculates microjoules per received packet as total joules divided by received packets and multiplied by one million. Running all three variants also produces a comparison workbook with a static and dynamic sheet for each variant.
